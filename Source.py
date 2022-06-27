@@ -30,6 +30,7 @@ class r(io.BytesIO):
         self.seek(pt)
         return tmp
 
+
 def combineBytes(src, name: str, cnt: int):
     src = src._asdict()
     src[name] = 0
@@ -39,12 +40,15 @@ def combineBytes(src, name: str, cnt: int):
         del src[name + str(i)]
     return T('GenericDict', src.keys())(**src)
 
+
 def c(name: str, cnt: int):
     return ["{}{}".format(name, x) for x in range(cnt)]
+
 
 def byteFloat(b):
     import struct
     return struct.Struct(">f").unpack(b)[0]
+
 
 athList = [
     0x78,0x5F,0x56,0x51,0x4E,0x4C,0x4B,0x49,0x48,0x48,0x47,0x46,0x46,0x45,0x45,0x45,
@@ -177,7 +181,7 @@ listInt4 = [
     b"\x3F\x5B\x6D\xB7",b"\x3F\x36\xDB\x6E",b"\x3F\x12\x49\x25",b"\x3E\xDB\x6D\xB7",b"\x3E\x92\x49\x25",b"\x3E\x12\x49\x25",b"\x00\x00\x00\x00",b"\x00\x00\x00\x00",
 ]
 listFloat4 = [byteFloat(v) for v in listInt4]
-list1Int = [
+list1Float = [
     [
         b"\x3D\xA7\x3D\x75",b"\x3D\xA7\x3D\x75",b"\x3D\xA7\x3D\x75",b"\x3D\xA7\x3D\x75",b"\x3D\xA7\x3D\x75",b"\x3D\xA7\x3D\x75",b"\x3D\xA7\x3D\x75",b"\x3D\xA7\x3D\x75",
         b"\x3D\xA7\x3D\x75",b"\x3D\xA7\x3D\x75",b"\x3D\xA7\x3D\x75",b"\x3D\xA7\x3D\x75",b"\x3D\xA7\x3D\x75",b"\x3D\xA7\x3D\x75",b"\x3D\xA7\x3D\x75",b"\x3D\xA7\x3D\x75",
@@ -243,7 +247,8 @@ list1Int = [
         b"\x3F\x44\xE3\xF5",b"\x3F\x42\xDE\x29",b"\x3F\x40\xD0\xDA",b"\x3F\x3E\xBC\x1B",b"\x3F\x3C\xA0\x03",b"\x3F\x3A\x7C\xA4",b"\x3F\x38\x52\x16",b"\x3F\x36\x20\x6C",
     ]
 ]
-list2Int = [
+list1Float = [[byteFloat(y) for y in x] for x in list1Float]
+list2Float = [
     [
         b"\xBD\x0A\x8B\xD4",b"\x3D\x0A\x8B\xD4",b"\x3D\x0A\x8B\xD4",b"\xBD\x0A\x8B\xD4",b"\x3D\x0A\x8B\xD4",b"\xBD\x0A\x8B\xD4",b"\xBD\x0A\x8B\xD4",b"\x3D\x0A\x8B\xD4",
         b"\x3D\x0A\x8B\xD4",b"\xBD\x0A\x8B\xD4",b"\xBD\x0A\x8B\xD4",b"\x3D\x0A\x8B\xD4",b"\xBD\x0A\x8B\xD4",b"\x3D\x0A\x8B\xD4",b"\x3D\x0A\x8B\xD4",b"\xBD\x0A\x8B\xD4",
@@ -309,7 +314,8 @@ list2Int = [
         b"\xBF\x23\x9D\xA9",b"\xBF\x26\x05\x0A",b"\xBF\x28\x66\x05",b"\xBF\x2A\xC0\x82",b"\xBF\x2D\x14\x69",b"\xBF\x2F\x61\xA5",b"\xBF\x31\xA8\x1D",b"\xBF\x33\xE7\xBC",
     ]
 ]
-list3Int = [
+list2Float = [[byteFloat(y) for y in x] for x in list2Float]
+list3Float = [
     [
         b"\x3A\x35\x04\xF0",b"\x3B\x01\x83\xB8",b"\x3B\x70\xC5\x38",b"\x3B\xBB\x92\x68",b"\x3C\x04\xA8\x09",b"\x3C\x30\x82\x00",b"\x3C\x61\x28\x4C",b"\x3C\x8B\x3F\x17",
         b"\x3C\xA8\x39\x92",b"\x3C\xC7\x7F\xBD",b"\x3C\xE9\x11\x10",b"\x3D\x06\x77\xCD",b"\x3D\x19\x8F\xC4",b"\x3D\x2D\xD3\x5C",b"\x3D\x43\x46\x43",b"\x3D\x59\xEC\xC1",
@@ -330,7 +336,7 @@ list3Int = [
         b"\xBF\x7F\xF6\x88",b"\xBF\x7F\xF9\xD0",b"\xBF\x7F\xFC\x32",b"\xBF\x7F\xFD\xDA",b"\xBF\x7F\xFE\xED",b"\xBF\x7F\xFF\x8F",b"\xBF\x7F\xFF\xDF",b"\xBF\x7F\xFF\xFC",
     ]
 ]
-list3Int = [[byteFloat(y) for y in x] for x in list3Int]
+list3Float = [[byteFloat(y) for y in x] for x in list3Float]
 
 def checkSum(f, cnt: int):
     temp = f.peek(cnt)
@@ -338,7 +344,8 @@ def checkSum(f, cnt: int):
     for i in range(cnt):
         sums = ((sums << 8) ^ v[(sums >> 8) ^ temp[i]]) & 0xffff
     return sums
-        
+
+
 class clData:
     def __init__(self, data):
         self.data = data
@@ -578,6 +585,7 @@ def hca_decode(data, cipher1=0xE0748978, cipher2=0xCF222F1F):
     file.seek(0)
     return file
 
+
 def bit16(inp):
     inp = inp & 0xffff
     return bytes([inp & 0xff, inp >> 8])
@@ -629,8 +637,8 @@ def decode1(channel, data, a, b, athTable):
         for i in range(channel["count"])
     ]
 
-def decode2(channel, data):
 
+def decode2(channel, data):
     channel["block"] = [0] * 0x80
     for i in range(channel["count"]):
         s = channel["scale"][i]
@@ -646,15 +654,17 @@ def decode2(channel, data):
                 data.addBit(-1)
             f = v
         channel["block"][i] = channel["base"][i] * f
+
+
 def decode3(channel, a, b, c, d):
     if channel["type"] != 2 and b > 0:
-
         for i in range(a):
             for j in range(b):
                 if c + j >= d:
                     break
                 channel["block"][c + j] = listFloat3[0x40 + channel["value"][channel["value3"] + i] - channel["value"][c - 1 - j]] * channel["block"][c - 1 - j]
         channel["block"][-1] = 0
+
 
 def decode4(channel, nextchannel, index, a, b, c):
     if channel["type"] == 1 and c:
@@ -673,19 +683,15 @@ def decode5(channel, index):
     flip = False
     for i in range(7):
         d1 = 0
-        d2 = count2
         for j in range(count1):
             for k in range(count2):
                 a = channel["wav1" if flip else "block"][s]
-                s += 1
-                b = channel["wav1" if flip else "block"][s]
-                s += 1
+                b = channel["wav1" if flip else "block"][s + 1]
+                s += 2
                 channel["block" if flip else "wav1"][d1] = b + a
+                channel["block" if flip else "wav1"][d1 + count2] = a - b
                 d1 += 1
-                channel["block" if flip else "wav1"][d2] = a - b
-                d2 += 1
             d1 += count2
-            d2 += count2
         s, d = d, s - 0x80
         flip = not flip
         count1 <<= 1
@@ -694,28 +700,23 @@ def decode5(channel, index):
     count2 = 1
     flip = True
     for i in range(7):
-        list1Float = 0 # byteFloat(list1Int[i])
-        list2Float = 0
+        listFloatI = 0
         s1 = 0
-        s2 = count2
         d1 = 0
         d2 = count2 * 2 - 1
         for j in range(count1):
             for k in range(count2):
                 a = channel["wav1" if flip else "block"][s1]
+                b = channel["wav1" if flip else "block"][s1 + count2]
                 s1 += 1
-                b = channel["wav1" if flip else "block"][s2]
-                s2 += 1
-                c = byteFloat(list1Int[i][list1Float])
-                list1Float += 1
-                d = byteFloat(list2Int[i][list2Float])
-                list2Float += 1
+                c = list1Float[i][listFloatI]
+                d = list2Float[i][listFloatI]
+                listFloatI += 1
                 channel["block" if flip else "wav1"][d1] = a * c - b * d
                 channel["block" if flip else "wav1"][d2] = a * d + b * c
                 d1 += 1
                 d2 -= 1
             s1 += count2
-            s2 += count2
             d1 += count2
             d2 += count2 * 3
         flip = not flip
@@ -724,13 +725,13 @@ def decode5(channel, index):
     for i in range(0x80):
         channel["wav2"][i] = channel["block"][i]
     for i in range(0x40):
-        channel["wave"][index][i] = channel["wav2"][0x40 + i] * list3Int[0][i] + channel["wav3"][i]
+        channel["wave"][index][i] = channel["wav2"][0x40 + i] * list3Float[0][i] + channel["wav3"][i]
     for i in range(0x40):
-        channel["wave"][index][0x40 + i] = channel["wav2"][0x80 - 1 - i] * list3Int[1][i] - channel["wav3"][0x40 + i]
+        channel["wave"][index][0x40 + i] = channel["wav2"][0x80 - 1 - i] * list3Float[1][i] - channel["wav3"][0x40 + i]
     for i in range(0x40):
-        channel["wav3"][i] = channel["wav2"][0x40 - 1 - i] * list3Int[1][0x40 - 1 - i]
+        channel["wav3"][i] = channel["wav2"][0x40 - 1 - i] * list3Float[1][0x40 - 1 - i]
     for i in range(0x40):
-        channel["wav3"][0x40 + i] = channel["wav2"][i] * list3Int[0][0x40 - 1 - i]
+        channel["wav3"][0x40 + i] = channel["wav2"][i] * list3Float[0][0x40 - 1 - i]
 
 
 if __name__ == '__main__':
