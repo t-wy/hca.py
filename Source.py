@@ -131,10 +131,12 @@ valueInt = [
     b"\x3E\x1C\x65\x73",b"\x3E\x50\x63\x34",b"\x3E\x8A\xD4\xC6",b"\x3E\xB8\xFB\xAF",b"\x3E\xF6\x7A\x41",b"\x3F\x24\x35\x16",b"\x3F\x5A\xCB\x94",b"\x3F\x91\xC3\xD3",
     b"\x3F\xC2\x38\xD2",b"\x40\x01\x64\xD2",b"\x40\x2C\x68\x97",b"\x40\x65\xB9\x07",b"\x40\x99\x0B\x88",b"\x40\xCB\xEC\x15",b"\x41\x07\xDB\x35",b"\x41\x35\x04\xF3",
 ]
+valueFloat = [byteFloat(v) for v in valueInt]
 scaleInt = [
     b"\x00\x00\x00\x00",b"\x3F\x2A\xAA\xAB",b"\x3E\xCC\xCC\xCD",b"\x3E\x92\x49\x25",b"\x3E\x63\x8E\x39",b"\x3E\x3A\x2E\x8C",b"\x3E\x1D\x89\xD9",b"\x3E\x08\x88\x89",
     b"\x3D\x84\x21\x08",b"\x3D\x02\x08\x21",b"\x3C\x81\x02\x04",b"\x3C\x00\x80\x81",b"\x3B\x80\x40\x20",b"\x3B\x00\x20\x08",b"\x3A\x80\x10\x02",b"\x3A\x00\x08\x01",
 ]
+scaleFloat = [byteFloat(v) for v in scaleInt]
 list1 = [ 0,2,3,3,4,4,4,4,5,6,7,8,9,10,11,12 ]
 list2 = [
     0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
@@ -441,7 +443,7 @@ def hca_decode(data, cipher1=0xE0748978, cipher2=0xCF222F1F):
     if _ath.type == 0:
         _athtable = [0 for _ in range(0x80)]
     else:
-        _athtable = [(0xff if index >= 0x28e else athList[index]) for i in range(0x80) for index in [(key * i) >> 13]]
+        _athtable = [(0xff if index >= 0x28e else athList[index]) for i in range(0x80) for index in [(_format.samplingRate * i) >> 13]]
     if _ciph.type == 0:
         _ciphertable = [i for i in range(256)]
     elif _ciph.type == 1:
@@ -592,8 +594,6 @@ def bit16(inp):
 
 
 def decode1(channel, data, a, b, athTable):
-    valueFloat = [byteFloat(v) for v in valueInt]
-    scaleFloat = [byteFloat(v) for v in scaleInt]
     v = data.getBit(3)
     if v >= 6:
         for i in range(channel["count"]):
