@@ -322,10 +322,7 @@ def hca_decode(data, cipher1=0xE0748978, cipher2=0xCF222F1F):
         "comptype": 'NONE',
         "compname": 'not compressed',        
     }).values())
-    globals().update(locals())
     for l in range(count):
-        if l % 100 == 0:
-            print("{}/{}".format(l, count))
         address = refaddress + _comp.blockSize * l
         f.seek(address)
         if checkSum(f, _comp.blockSize) > 0:
@@ -736,6 +733,5 @@ if __name__ == '__main__':
     import acb # https://github.com/summertriangle-dev/acb.py > https://github.com/CrescentApricot/acbpy/tree/master/acbpy
     test = open("test.acb", "rb").read()
     test = acb.parse_bytes(test)[0].binary.read() # HCA file
-    x = hca_decode(test, 0xf27e3b22, 0x00003657) # deresute
-    # x = hca_decode(test, 0xbc731a85, 0x0002b875) # mirishita
+    x = hca_decode(test, 0x89abcdef, 0x01234567)
     open("test.wav", "wb").write(x.read())
