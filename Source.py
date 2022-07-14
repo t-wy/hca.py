@@ -358,6 +358,7 @@ class clData:
         if self.bit + bitSize <= self.size:
             mask = [ 0xFFFFFF,0x7FFFFF,0x3FFFFF,0x1FFFFF,0x0FFFFF,0x07FFFF,0x03FFFF,0x01FFFF ]
             datatmp = self.data[self.bit >> 3: (self.bit >> 3) + 3]
+            datatmp += [0] * (3 - len(datatmp))
             v = (datatmp[0] << 16) | (datatmp[1] << 8) | datatmp[2]
             v &= mask[self.bit & 7]
             v >>= 24 - (self.bit & 7) - bitSize
