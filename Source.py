@@ -2,7 +2,7 @@
 # TODO: vectorize
 # Python version by: t-wy
 
-import io
+import io, numpy as np
 from collections import namedtuple as T
 class r(io.BytesIO):
     def readUInt(self, size):
@@ -111,6 +111,7 @@ v = [
     0x8243,0x0246,0x024C,0x8249,0x0258,0x825D,0x8257,0x0252,0x0270,0x8275,0x827F,0x027A,0x826B,0x026E,0x0264,0x8261,
     0x0220,0x8225,0x822F,0x022A,0x823B,0x023E,0x0234,0x8231,0x8213,0x0216,0x021C,0x8219,0x0208,0x820D,0x8207,0x0202,
 ]
+# v2.0
 scalelist = [
     0x0E,0x0E,0x0E,0x0E,0x0E,0x0E,0x0D,0x0D,
     0x0D,0x0D,0x0D,0x0D,0x0C,0x0C,0x0C,0x0C,
@@ -121,6 +122,19 @@ scalelist = [
     0x04,0x04,0x03,0x03,0x03,0x02,0x02,0x02,
     0x02,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
 ]
+"""
+v1.3
+scalelist = [
+    0x0E,0x0E,0x0E,0x0E,0x0E,0x0E,0x0D,0x0D,
+    0x0D,0x0D,0x0D,0x0D,0x0C,0x0C,0x0C,0x0C,
+    0x0C,0x0C,0x0B,0x0B,0x0B,0x0B,0x0B,0x0B,
+    0x0A,0x0A,0x0A,0x0A,0x0A,0x0A,0x0A,0x09,
+    0x09,0x09,0x09,0x09,0x09,0x08,0x08,0x08,
+    0x08,0x08,0x08,0x07,0x06,0x06,0x05,0x04,
+    0x04,0x04,0x03,0x03,0x03,0x02,0x02,0x02,
+    0x02,0x01,0x01,0x01,0x01,0x01,0x01,0x01,
+]
+"""
 valueInt = [
     b"\x34\x2A\x8D\x26",b"\x34\x63\x3F\x89",b"\x34\x97\x65\x7D",b"\x34\xC9\xB9\xBE",b"\x35\x06\x64\x91",b"\x35\x33\x11\xC4",b"\x35\x6E\x99\x10",b"\x35\x9E\xF5\x32",
     b"\x35\xD3\xCC\xF1",b"\x36\x0D\x1A\xDF",b"\x36\x3C\x03\x4A",b"\x36\x7A\x83\xB3",b"\x36\xA6\xE5\x95",b"\x36\xDE\x60\xF5",b"\x37\x14\x26\xFF",b"\x37\x45\x67\x2A",
@@ -131,12 +145,12 @@ valueInt = [
     b"\x3E\x1C\x65\x73",b"\x3E\x50\x63\x34",b"\x3E\x8A\xD4\xC6",b"\x3E\xB8\xFB\xAF",b"\x3E\xF6\x7A\x41",b"\x3F\x24\x35\x16",b"\x3F\x5A\xCB\x94",b"\x3F\x91\xC3\xD3",
     b"\x3F\xC2\x38\xD2",b"\x40\x01\x64\xD2",b"\x40\x2C\x68\x97",b"\x40\x65\xB9\x07",b"\x40\x99\x0B\x88",b"\x40\xCB\xEC\x15",b"\x41\x07\xDB\x35",b"\x41\x35\x04\xF3",
 ]
-valueFloat = [byteFloat(v) for v in valueInt]
+valueFloat = np.array([byteFloat(v) for v in valueInt])
 scaleInt = [
     b"\x00\x00\x00\x00",b"\x3F\x2A\xAA\xAB",b"\x3E\xCC\xCC\xCD",b"\x3E\x92\x49\x25",b"\x3E\x63\x8E\x39",b"\x3E\x3A\x2E\x8C",b"\x3E\x1D\x89\xD9",b"\x3E\x08\x88\x89",
     b"\x3D\x84\x21\x08",b"\x3D\x02\x08\x21",b"\x3C\x81\x02\x04",b"\x3C\x00\x80\x81",b"\x3B\x80\x40\x20",b"\x3B\x00\x20\x08",b"\x3A\x80\x10\x02",b"\x3A\x00\x08\x01",
 ]
-scaleFloat = [byteFloat(v) for v in scaleInt]
+scaleFloat = np.array([byteFloat(v) for v in scaleInt])
 list1 = [ 0,2,3,3,4,4,4,4,5,6,7,8,9,10,11,12 ]
 list2 = [
     0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
@@ -177,11 +191,28 @@ listInt3 = [[
     b"\x49\x6A\xC0\xC7",b"\x49\x9C\x65\x73",b"\x49\xD0\x63\x34",b"\x4A\x0A\xD4\xC6",b"\x4A\x38\xFB\xAF",b"\x4A\x76\x7A\x41",b"\x4A\xA4\x35\x16",b"\x4A\xDA\xCB\x94",
     b"\x4B\x11\xC3\xD3",b"\x4B\x42\x38\xD2",b"\x4B\x81\x64\xD2",b"\x4B\xAC\x68\x97",b"\x4B\xE5\xB9\x07",b"\x4C\x19\x0B\x88",b"\x4C\x4B\xEC\x15",b"\x00\x00\x00\x00",
 ]]
-listFloat3 = [byteFloat(v) for v in listInt3[0]] + [byteFloat(v) for v in listInt3[1]]            
+listFloat3 = np.array([byteFloat(v) for v in listInt3[0]] + [byteFloat(v) for v in listInt3[1]])
+# v2.0
+listInt4 = [
+    b"\x40\x00\x00\x00",b"\x3F\xED\xB6\xDB",b"\x3F\xDB\x6D\xB7",b"\x3F\xC9\x24\x92",b"\x3F\xB6\xDB\x6E",b"\x3F\xA4\x92\x49",b"\x3F\x92\x49\x25",b"\x3F\x80\x00\x00",
+    b"\x3F\x5B\x6D\xB7",b"\x3F\x36\xDB\x6E",b"\x3F\x12\x49\x25",b"\x3E\xDB\x6D\xB7",b"\x3E\x92\x49\x25",b"\x3E\x12\x49\x25",b"\x00\x00\x00\x00",b"\x00\x00\x00\x00",
+    b"\x00\x00\x00\x00",b"\x32\xA0\xB0\x51",b"\x32\xD6\x1B\x5E",b"\x33\x0E\xA4\x3A",b"\x33\x3E\x0F\x68",b"\x33\x7D\x3E\x0C",b"\x33\xA8\xB6\xD5",b"\x33\xE0\xCC\xDF",
+    b"\x34\x15\xC3\xFF",b"\x34\x47\x8D\x75",b"\x34\x84\xF1\xF6",b"\x34\xB1\x23\xF6",b"\x34\xEC\x07\x19",b"\x35\x1D\x3E\xDA",b"\x35\x51\x84\xDF",b"\x35\x8B\x95\xC2",
+    b"\x35\xB9\xFC\xD2",b"\x35\xF7\xD0\xDF",b"\x36\x25\x19\x58",b"\x36\x5B\xFB\xB8",b"\x36\x92\x8E\x72",b"\x36\xC3\x46\xCD",b"\x37\x02\x18\xAF",b"\x37\x2D\x58\x3F",
+    b"\x37\x66\xF8\x5B",b"\x37\x99\xE0\x46",b"\x37\xCD\x07\x8C",b"\x38\x08\x98\x0F",b"\x38\x36\x00\x94",b"\x38\x72\x81\x77",b"\x38\xA1\x8F\xAF",b"\x38\xD7\x44\xFD",
+    b"\x39\x0F\x6A\x81",b"\x39\x3F\x17\x9A",b"\x39\x7E\x9E\x11",b"\x39\xA9\xA1\x5B",b"\x39\xE2\x05\x5B",b"\x3A\x16\x94\x2D",b"\x3A\x48\xA2\xD8",b"\x3A\x85\xAA\xC3",
+    b"\x3A\xB2\x1A\x32",b"\x3A\xED\x4F\x30",b"\x3B\x1E\x19\x6E",b"\x3B\x52\xA8\x1E",b"\x3B\x8C\x57\xCA",b"\x3B\xBA\xFF\x5B",b"\x3B\xF9\x29\x5A",b"\x3C\x25\xFE\xD7",
+    # Necessary?
+    b"\x3C\x5D\x2D\x82",b"\x3C\x93\x5A\x2B",b"\x3C\xC4\x56\x3F",b"\x3D\x02\xCD\x87",b"\x3D\x2E\x49\x34",b"\x3D\x68\x39\x6A",b"\x3D\x9A\xB6\x2B",b"\x3D\xCE\x24\x8C",
+    b"\x3E\x09\x55\xEE",b"\x3E\x36\xFD\x92",b"\x3E\x73\xD2\x90",b"\x3E\xA2\x70\x43",b"\x3E\xD8\x70\x39",b"\x3F\x10\x31\xDC",b"\x3F\x40\x21\x3B",b"\x00\x00\x00\x00",
+]
+"""
+v1.3
 listInt4 = [
     b"\x40\x00\x00\x00",b"\x3F\xED\xB6\xDB",b"\x3F\xDB\x6D\xB7",b"\x3F\xC9\x24\x92",b"\x3F\xB6\xDB\x6E",b"\x3F\xA4\x92\x49",b"\x3F\x92\x49\x25",b"\x3F\x80\x00\x00",
     b"\x3F\x5B\x6D\xB7",b"\x3F\x36\xDB\x6E",b"\x3F\x12\x49\x25",b"\x3E\xDB\x6D\xB7",b"\x3E\x92\x49\x25",b"\x3E\x12\x49\x25",b"\x00\x00\x00\x00",b"\x00\x00\x00\x00",
 ]
+"""
 listFloat4 = [byteFloat(v) for v in listInt4]
 list1Float = [
     [
@@ -249,7 +280,7 @@ list1Float = [
         b"\x3F\x44\xE3\xF5",b"\x3F\x42\xDE\x29",b"\x3F\x40\xD0\xDA",b"\x3F\x3E\xBC\x1B",b"\x3F\x3C\xA0\x03",b"\x3F\x3A\x7C\xA4",b"\x3F\x38\x52\x16",b"\x3F\x36\x20\x6C",
     ]
 ]
-list1Float = [[byteFloat(y) for y in x] for x in list1Float]
+list1Float = np.array([[byteFloat(y) for y in x] for x in list1Float])
 list2Float = [
     [
         b"\xBD\x0A\x8B\xD4",b"\x3D\x0A\x8B\xD4",b"\x3D\x0A\x8B\xD4",b"\xBD\x0A\x8B\xD4",b"\x3D\x0A\x8B\xD4",b"\xBD\x0A\x8B\xD4",b"\xBD\x0A\x8B\xD4",b"\x3D\x0A\x8B\xD4",
@@ -316,7 +347,7 @@ list2Float = [
         b"\xBF\x23\x9D\xA9",b"\xBF\x26\x05\x0A",b"\xBF\x28\x66\x05",b"\xBF\x2A\xC0\x82",b"\xBF\x2D\x14\x69",b"\xBF\x2F\x61\xA5",b"\xBF\x31\xA8\x1D",b"\xBF\x33\xE7\xBC",
     ]
 ]
-list2Float = [[byteFloat(y) for y in x] for x in list2Float]
+list2Float = np.array([[byteFloat(y) for y in x] for x in list2Float])
 list3Float = [
     [
         b"\x3A\x35\x04\xF0",b"\x3B\x01\x83\xB8",b"\x3B\x70\xC5\x38",b"\x3B\xBB\x92\x68",b"\x3C\x04\xA8\x09",b"\x3C\x30\x82\x00",b"\x3C\x61\x28\x4C",b"\x3C\x8B\x3F\x17",
@@ -338,7 +369,7 @@ list3Float = [
         b"\xBF\x7F\xF6\x88",b"\xBF\x7F\xF9\xD0",b"\xBF\x7F\xFC\x32",b"\xBF\x7F\xFD\xDA",b"\xBF\x7F\xFE\xED",b"\xBF\x7F\xFF\x8F",b"\xBF\x7F\xFF\xDF",b"\xBF\x7F\xFF\xFC",
     ]
 ]
-list3Float = [[byteFloat(y) for y in x] for x in list3Float]
+list3Float = np.array([[byteFloat(y) for y in x] for x in list3Float])
 
 def checkSum(f, cnt: int):
     temp = f.peek(cnt)
@@ -442,11 +473,11 @@ def hca_decode(data, cipher1=0xE0748978, cipher2=0xCF222F1F):
         _comment = None
     _athtable = None
     if _ath.type == 0:
-        _athtable = [0 for _ in range(0x80)]
+        _athtable = [0] * 0x80
     else:
         _athtable = [(0xff if index >= 0x28e else athList[index]) for i in range(0x80) for index in [(_format.samplingRate * i) >> 13]]
     if _ciph.type == 0:
-        _ciphertable = [i for i in range(256)]
+        _ciphertable = [*range(256)]
     elif _ciph.type == 1:
         v = 0
         _ciphertable = [0]
@@ -536,14 +567,12 @@ def hca_decode(data, cipher1=0xE0748978, cipher2=0xCF222F1F):
             "value3": _comp.r06 + _comp.r07,
             "count": _comp.r06 + (_comp.r07 if tr[i] != 2 else 0),
             "value": [0] * 0x80,
-            "value2": [0] * 8,
+            "value2": [0] * 0x80,
             "scale": [0] * 0x80,
-            "base": [0] * 0x80,
-            "block": [0] * 0x80,
-            "wav1": [0] * 0x80,
-            "wav2": [0] * 0x80,
-            "wav3": [0] * 0x80,
-            "wave": [[0] * 0x80 for _ in range(8)],
+            "base": np.zeros(0x80),
+            "block": np.zeros(0x80),
+            "wav3": np.zeros(0x80),
+            "wave": np.zeros((8, 0x80)),
         })
     refaddress = 0 + _header.dataOffset
     count = _format.blockCount
@@ -563,9 +592,7 @@ def hca_decode(data, cipher1=0xE0748978, cipher2=0xCF222F1F):
         f.seek(address)
         if checkSum(f, _comp.blockSize) > 0:
             raise ValueError("Checksum not = 0")
-        data = f.read(_comp.blockSize)
-        data = [_ciphertable[data[i]] for i in range(_comp.blockSize)]
-        d = clData(data)
+        d = clData([_ciphertable[i] for i in f.read(_comp.blockSize)])
         magic = d.getBit(16)
         if magic == 0xffff:
             a = (d.getBit(9) << 8) - d.getBit(7)
@@ -580,10 +607,8 @@ def hca_decode(data, cipher1=0xE0748978, cipher2=0xCF222F1F):
                     decode4(_channel[j], _channel[j + 1], i, _comp.r05 - _comp.r06, _comp.r06, _comp.r07)
                 for j in range(_format.channelCount):
                     decode5(_channel[j], i)
-        wavfile.writeframes(b"".join([bit16(int(min(1, max(-1, _channel[j]["wave"][x][y])) * 0x7FFF))
-                                      for x in range(8)
-                                      for y in range(0x80)
-                                      for j in range(_format.channelCount)]))
+        wav = np.vstack([_channel[j]["wave"].flatten() for j in range(_format.channelCount)]).T.flatten()
+        wavfile.writeframes((wav.flatten().clip(-1, 1) * 0x7FFF).astype("<i2").tobytes())
     wavfile.close()
     file.seek(0)
     return file
@@ -616,8 +641,9 @@ def decode1(channel, data, a, b, athTable):
     if channel["type"] == 2:
         v = data.checkBit(4)
         channel["value2"][0] = v
-        for i in range(a):
-            channel["value2"][i] = data.getBit(4)
+        if v < 15:
+            for i in range(8):
+                channel["value2"][i] = data.getBit(4)
     else:
         for i in range(a):
             channel["value"][channel["value3"] + i] = data.getBit(6)
@@ -633,14 +659,11 @@ def decode1(channel, data, a, b, athTable):
             else:
                 v = scalelist[v]
             channel["scale"][i] = v
-    channel["base"][:channel["count"]] = [
-        valueFloat[channel["value"][i]] * scaleFloat[channel["scale"][i]]
-        for i in range(channel["count"])
-    ]
+    channel["base"][:channel["count"]] = valueFloat[channel["value"][:channel["count"]]] * scaleFloat[channel["scale"][:channel["count"]]]
 
 
 def decode2(channel, data):
-    channel["block"] = [0] * 0x80
+    channel["block"] = np.zeros(0x80)
     for i in range(channel["count"]):
         s = channel["scale"][i]
         bitSize = list1[s]
@@ -658,86 +681,61 @@ def decode2(channel, data):
 
 
 def decode3(channel, a, b, c, d):
-    if channel["type"] != 2 and b > 0:
-        for i in range(a):
-            for j in range(b):
-                if c + j >= d:
-                    break
-                channel["block"][c + j] = listFloat3[0x40 + channel["value"][channel["value3"] + i] - channel["value"][c - 1 - j]] * channel["block"][c - 1 - j]
+    if channel["type"] != 2 and b:
+        maxj = min(a * b, d - c)
+        temp = np.array(channel["value"])
+        channel["block"][c:c+maxj] = listFloat3[0x40 + temp[channel["value3"]:channel["value3"]+a].repeat(b)[:maxj] - temp[c-1:c-1-maxj:-1]] * \
+                                     channel["block"][c-1:c-1-maxj:-1]
         channel["block"][-1] = 0
 
 
 def decode4(channel, nextchannel, index, a, b, c):
     if channel["type"] == 1 and c:
         f1 = listFloat4[nextchannel["value2"][index]]
-        f2 = f1 - 2
-        for i in range(a):
-            nextchannel["block"][b + i] = channel["block"][b + i] * f2
-            channel["block"][b + i] = channel["block"][b + i] * f1
+        nextchannel["block"][b:b+a] = channel["block"][b:b+a] * (f1 - 2)
+        channel["block"][b:b+a] *= f1
         
 
 def decode5(channel, index):
-    s = 0
-    d = 0
     count1 = 1
-    count2 = 0x40
-    flip = False
+    count2 = 0x40    
+    a = channel["block"]
     for i in range(7):
-        d1 = 0
-        for j in range(count1):
-            for k in range(count2):
-                a = channel["wav1" if flip else "block"][s]
-                b = channel["wav1" if flip else "block"][s + 1]
-                s += 2
-                channel["block" if flip else "wav1"][d1] = b + a
-                channel["block" if flip else "wav1"][d1 + count2] = a - b
-                d1 += 1
-            d1 += count2
-        s, d = d, s - 0x80
-        flip = not flip
+        a = a.reshape((count1, count2, 2))
+        tmp0, tmp1 = a[:, :, 0], a[:, :, 1]
+        a[:, :, 0], a[:, :, 1] = tmp0 + tmp1, tmp0 - tmp1
+        a = a.transpose((0, 2, 1))
         count1 <<= 1
         count2 >>= 1
     count1 = 0x40
     count2 = 1
-    flip = True
     for i in range(7):
-        listFloatI = 0
-        s1 = 0
-        d1 = 0
-        d2 = count2 * 2 - 1
-        for j in range(count1):
-            for k in range(count2):
-                a = channel["wav1" if flip else "block"][s1]
-                b = channel["wav1" if flip else "block"][s1 + count2]
-                s1 += 1
-                c = list1Float[i][listFloatI]
-                d = list2Float[i][listFloatI]
-                listFloatI += 1
-                channel["block" if flip else "wav1"][d1] = a * c - b * d
-                channel["block" if flip else "wav1"][d2] = a * d + b * c
-                d1 += 1
-                d2 -= 1
-            s1 += count2
-            d1 += count2
-            d2 += count2 * 3
-        flip = not flip
+        a = a.reshape((count1, 2, count2))
+        tmp0, tmp1 = a[:,0], a[:,1]
+        c, d = list1Float[i].reshape((-1, count2)), list2Float[i].reshape((-1, count2))
+        a[:,0], a[:,1] = tmp0 * c - tmp1 * d, (tmp0 * d + tmp1 * c)[:,::-1]
         count1 >>= 1
         count2 <<= 1
-    for i in range(0x80):
-        channel["wav2"][i] = channel["block"][i]
-    for i in range(0x40):
-        channel["wave"][index][i] = channel["wav2"][0x40 + i] * list3Float[0][i] + channel["wav3"][i]
-    for i in range(0x40):
-        channel["wave"][index][0x40 + i] = channel["wav2"][0x80 - 1 - i] * list3Float[1][i] - channel["wav3"][0x40 + i]
-    for i in range(0x40):
-        channel["wav3"][i] = channel["wav2"][0x40 - 1 - i] * list3Float[1][0x40 - 1 - i]
-    for i in range(0x40):
-        channel["wav3"][0x40 + i] = channel["wav2"][i] * list3Float[0][0x40 - 1 - i]
+    a = a.flatten()
+    channel["wave"][index,:0x40] = a[0x40:] * list3Float[0] + channel["wav3"][:0x40]
+    channel["wave"][index, 0x40:] = a[:0x3f:-1] * list3Float[1] - channel["wav3"][0x40:]
+    channel["wav3"][:0x40] = a[0x3f::-1] * list3Float[1][::-1]
+    channel["wav3"][0x40:] = a[:0x40] * list3Float[0][::-1]
 
 
 if __name__ == '__main__':
-    import acb # https://github.com/summertriangle-dev/acb.py > https://github.com/CrescentApricot/acbpy/tree/master/acbpy
-    test = open("test.acb", "rb").read()
-    test = acb.parse_bytes(test)[0].binary.read() # HCA file
-    x = hca_decode(test, 0x89abcdef, 0x01234567)
-    open("test.wav", "wb").write(x.read())
+    import os, time
+    from acb_wrapper import parse_bytes
+    acbname = "test" # test.acb
+    acbfile = open("{}.acb".format(acbname), "rb").read()
+    acbcontent = parse_bytes(acbfile)
+    os.makedirs(acbname, exist_ok=True)
+    starttime = time.time()
+    for file in acbcontent:
+        filename = "{}.{}".format(file.track.name, file.extension)
+        content = file.binary.read()
+        open("{}/{}".format(acbname, filename), "wb").write(content)
+        if file.extension == "hca":
+            wav = hca_decode(content, 0x89abcdef, 0x01234567)
+            open("{}/{}.wav".format(acbname, file.track.name), "wb").write(wav.read())
+    print("Time elapsed: {:.3f}s".format(time.time() - starttime))
