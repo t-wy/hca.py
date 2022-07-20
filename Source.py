@@ -1,5 +1,4 @@
-# Reference: https://github.com/Nyagamon/HCADecoder
-# TODO: vectorize
+# TODO: further vectorize
 # Python version by: t-wy
 
 import io, numpy as np
@@ -93,7 +92,7 @@ athList = [
     0xDE,0xDF,0xE0,0xE1,0xE2,0xE3,0xE4,0xE5,0xE6,0xE7,0xE8,0xE9,0xEA,0xEB,0xED,0xEE,
     0xEF,0xF0,0xF1,0xF2,0xF3,0xF4,0xF5,0xF7,0xF8,0xF9,0xFA,0xFB,0xFC,0xFD,0xFF,0xFF,
 ]
-v = [
+CRC16Table = [
     0x0000,0x8005,0x800F,0x000A,0x801B,0x001E,0x0014,0x8011,0x8033,0x0036,0x003C,0x8039,0x0028,0x802D,0x8027,0x0022,
     0x8063,0x0066,0x006C,0x8069,0x0078,0x807D,0x8077,0x0072,0x0050,0x8055,0x805F,0x005A,0x804B,0x004E,0x0044,0x8041,
     0x80C3,0x00C6,0x00CC,0x80C9,0x00D8,0x80DD,0x80D7,0x00D2,0x00F0,0x80F5,0x80FF,0x00FA,0x80EB,0x00EE,0x00E4,0x80E1,
@@ -110,7 +109,7 @@ v = [
     0x82E3,0x02E6,0x02EC,0x82E9,0x02F8,0x82FD,0x82F7,0x02F2,0x02D0,0x82D5,0x82DF,0x02DA,0x82CB,0x02CE,0x02C4,0x82C1,
     0x8243,0x0246,0x024C,0x8249,0x0258,0x825D,0x8257,0x0252,0x0270,0x8275,0x827F,0x027A,0x826B,0x026E,0x0264,0x8261,
     0x0220,0x8225,0x822F,0x022A,0x823B,0x023E,0x0234,0x8231,0x8213,0x0216,0x021C,0x8219,0x0208,0x820D,0x8207,0x0202,
-]
+] # 0x8005 / CRC-16-IBM
 # v2.0
 scalelist = [
     0x0E,0x0E,0x0E,0x0E,0x0E,0x0E,0x0D,0x0D,
@@ -375,7 +374,7 @@ def checkSum(f, cnt: int):
     temp = f.peek(cnt)
     sums = 0
     for i in range(cnt):
-        sums = ((sums << 8) ^ v[(sums >> 8) ^ temp[i]]) & 0xffff
+        sums = ((sums << 8) ^ CRC16Table[(sums >> 8) ^ temp[i]]) & 0xffff
     return sums
 
 
@@ -400,7 +399,6 @@ class clData:
         return v
     def addBit(self, bitSize):
         self.bit += bitSize
-
 
 def hca_decode(data, cipher1=0xE0748978, cipher2=0xCF222F1F):
     import io 
@@ -539,7 +537,7 @@ def hca_decode(data, cipher1=0xE0748978, cipher2=0xCF222F1F):
     ceil2 = lambda a, b: (a // b + bool(a % b)) if b > 0 else 0
     _comp_r09 = ceil2(_comp.r05 - (_comp.r06 + _comp.r07), _comp.r08)
     b = _format.channelCount // _comp.r03
-    tr = [0 for _ in range(0x10)]
+    tr = np.zeros(0x10, dtype=np.ubyte)
     if _comp.r07 and b > 1:
         cursor = 0
         for i in range(_comp.r03):
@@ -560,20 +558,17 @@ def hca_decode(data, cipher1=0xE0748978, cipher2=0xCF222F1F):
                 tr[cursor: cursor+2] = [1, 2]
                 tr[cursor+4: cursor+8] = [1, 2, 1, 2]                
             cursor += b
-    _channel = []
-    for i in range(_format.channelCount):
-        _channel.append({
-            "type": tr[i],
-            "value3": _comp.r06 + _comp.r07,
-            "count": _comp.r06 + (_comp.r07 if tr[i] != 2 else 0),
-            "value": [0] * 0x80,
-            "value2": [0] * 0x80,
-            "scale": [0] * 0x80,
-            "base": np.zeros(0x80),
-            "block": np.zeros(0x80),
-            "wav3": np.zeros(0x80),
-            "wave": np.zeros((8, 0x80)),
-        })
+    _value3 = _comp.r06 + _comp.r07
+    _count = [_comp.r06 + (_comp.r07 if tr[i] != 2 else 0) for i in range(_format.channelCount)]
+    _channels = {
+        "value": [[0] * 0x80 for _ in range(_format.channelCount)],
+        "value2": [[0] * 0x80 for _ in range(_format.channelCount)],
+        "scale": [[0] * 0x80 for _ in range(_format.channelCount)],
+        "base": np.zeros((_format.channelCount, 0x80)),
+        "block": np.zeros((_format.channelCount, 0x80)),
+        "wav3": np.zeros((_format.channelCount, 0x80)),
+        "wave": np.zeros((_format.channelCount, 8, 0x80)),
+    }
     refaddress = 0 + _header.dataOffset
     count = _format.blockCount
     import wave, io
@@ -583,32 +578,31 @@ def hca_decode(data, cipher1=0xE0748978, cipher2=0xCF222F1F):
         "nchannels": _format.channelCount,
         "sampwidth": 2, # 16 bit
         "framerate": _format.samplingRate,
-        "nframes": _comp.blockSize * 0x400,
+        "nframes": _comp.blockSize << 10,
         "comptype": 'NONE',
         "compname": 'not compressed',        
     }).values())
     for l in range(count):
         address = refaddress + _comp.blockSize * l
         f.seek(address)
-        if checkSum(f, _comp.blockSize) > 0:
+        if checkSum(f, _comp.blockSize):
             raise ValueError("Checksum not = 0")
         d = clData([_ciphertable[i] for i in f.read(_comp.blockSize)])
         magic = d.getBit(16)
         if magic == 0xffff:
             a = (d.getBit(9) << 8) - d.getBit(7)
             for i in range(_format.channelCount):
-                decode1(_channel[i], d, _comp_r09, a, _athtable)
+                decode1(d, _comp_r09, a, _athtable, tr[i], _channels["base"][i], _value3, _count[i], _channels["scale"][i], _channels["value"][i], _channels["value2"][i])
             for i in range(8):
                 for j in range(_format.channelCount):
-                    decode2(_channel[j], d)
+                    decode2(d, _channels["block"][j], _channels["base"][j], _count[j], _channels["scale"][j]) # expensive
                 for j in range(_format.channelCount):
-                    decode3(_channel[j], _comp_r09, _comp.r08, _comp.r07 + _comp.r06, _comp.r05)
+                    decode3(_comp_r09, _comp.r08, _comp.r07 + _comp.r06, _comp.r05, _channels["block"][j], tr[j], _value3, _channels["value"][j])
                 for j in range(_format.channelCount - 1):
-                    decode4(_channel[j], _channel[j + 1], i, _comp.r05 - _comp.r06, _comp.r06, _comp.r07)
-                for j in range(_format.channelCount):
-                    decode5(_channel[j], i)
-        wav = np.vstack([_channel[j]["wave"].flatten() for j in range(_format.channelCount)]).T.flatten()
-        wavfile.writeframes((wav.flatten().clip(-1, 1) * 0x7FFF).astype("<i2").tobytes())
+                    decode4(_channels["value2"][j + 1][i], _comp.r05 - _comp.r06, _comp.r06, _comp.r07, _channels["block"][j], _channels["block"][j + 1], tr[j])
+                decode5(i, _channels["block"], _channels["wav3"], _channels["wave"]) # expensive
+        wav = _channels["wave"].reshape((_format.channelCount, -1)).T.ravel()
+        wavfile.writeframes((wav.clip(-1, 1) * 0x7FFF).astype("<i2").tobytes())
     wavfile.close()
     file.seek(0)
     return file
@@ -619,37 +613,37 @@ def bit16(inp):
     return bytes([inp & 0xff, inp >> 8])
 
 
-def decode1(channel, data, a, b, athTable):
+def decode1(data, a, b, athTable, channeltype, base, _value3, count, scale, value, value2):
     v = data.getBit(3)
     if v >= 6:
-        for i in range(channel["count"]):
-            channel["value"][i] = data.getBit(6)
+        for i in range(count):
+            value[i] = data.getBit(6)
     elif v:
         v1 = data.getBit(6)
         v2 = (1 << v) - 1
         v3 = v2 >> 1
-        channel["value"][0] = v1
-        for i in range(1, channel["count"]):
+        value[0] = v1
+        for i in range(1, count):
             v4 = data.getBit(v)
             if v4 != v2:
                 v1 += (v4 - v3)
             else:
                 v1 = data.getBit(6)
-            channel["value"][i] = v1
+            value[i] = v1
     else:
-        channel["value"] = [0] * 0x80
-    if channel["type"] == 2:
+        for i in range(0x80):
+            value[i] = 0
+    if channeltype == 2:
         v = data.checkBit(4)
-        channel["value2"][0] = v
+        value2[0] = v
         if v < 15:
             for i in range(8):
-                channel["value2"][i] = data.getBit(4)
+                value2[i] = data.getBit(4)
     else:
         for i in range(a):
-            channel["value"][channel["value3"] + i] = data.getBit(6)
-    channel["scale"] = [0] * 0x80
-    for i in range(channel["count"]):
-        v = channel["value"][i]
+            value[_value3 + i] = data.getBit(6)
+    for i in range(count):
+        v = value[i]
         if v:
             v = athTable[i] + ((b + i) >> 8) - ((v * 5) >> 1) + 1
             if v < 0:
@@ -658,14 +652,16 @@ def decode1(channel, data, a, b, athTable):
                 v = 1
             else:
                 v = scalelist[v]
-            channel["scale"][i] = v
-    channel["base"][:channel["count"]] = valueFloat[channel["value"][:channel["count"]]] * scaleFloat[channel["scale"][:channel["count"]]]
+            scale[i] = v
+        else:
+            scale[i] = 0
+    base[:count] = valueFloat[value[:count]] * scaleFloat[scale[:count]]
 
 
-def decode2(channel, data):
-    channel["block"] = np.zeros(0x80)
-    for i in range(channel["count"]):
-        s = channel["scale"][i]
+def decode2(data, block, base, count, scale):
+    block[:] = 0
+    for i in range(count):
+        s = scale[i]
         bitSize = list1[s]
         v = data.getBit(bitSize)
         if s < 8:
@@ -673,35 +669,33 @@ def decode2(channel, data):
             data.addBit(list2[v] - bitSize)
             f = list3[v]
         else:
-            v = (1 - ((v & 1) << 1)) * (v >> 1)
+            f = v = (-1 if v & 1 else 1) * (v >> 1)
             if not v:                
                 data.addBit(-1)
-            f = v
-        channel["block"][i] = channel["base"][i] * f
+        block[i] = base[i] * f
 
 
-def decode3(channel, a, b, c, d):
-    if channel["type"] != 2 and b:
+def decode3(a, b, c, d, block, channeltype, _value3, value):
+    if channeltype != 2 and b:
         maxj = min(a * b, d - c)
-        temp = np.array(channel["value"])
-        channel["block"][c:c+maxj] = listFloat3[0x40 + temp[channel["value3"]:channel["value3"]+a].repeat(b)[:maxj] - temp[c-1:c-1-maxj:-1]] * \
-                                     channel["block"][c-1:c-1-maxj:-1]
-        channel["block"][-1] = 0
+        temp = np.array(value)
+        block[c:c+maxj] = listFloat3[0x40 + temp[_value3:_value3+a].repeat(b)[:maxj] - temp[c-1:c-1-maxj:-1]] * \
+                                     block[c-1:c-1-maxj:-1]
+        block[-1] = 0
 
 
-def decode4(channel, nextchannel, index, a, b, c):
-    if channel["type"] == 1 and c:
-        f1 = listFloat4[nextchannel["value2"][index]]
-        nextchannel["block"][b:b+a] = channel["block"][b:b+a] * (f1 - 2)
-        channel["block"][b:b+a] *= f1
-        
+def decode4(nextchannelindex, a, b, c, block, nextblock, channeltype):
+    if channeltype == 1 and c:
+        f1 = listFloat4[nextchannelindex]
+        nextblock[b:b+a] = block[b:b+a] * (f1 - 2)
+        block[b:b+a] *= f1
 
-def decode5(channel, index):
+def decode5(index, block, wav3, wave):
     count1 = 1
     count2 = 0x40    
-    a = channel["block"]
+    a = block
     for i in range(7):
-        a = a.reshape((count1, count2, 2))
+        a = a.reshape((-1, count2, 2))
         tmp0, tmp1 = a[:, :, 0], a[:, :, 1]
         a[:, :, 0], a[:, :, 1] = tmp0 + tmp1, tmp0 - tmp1
         a = a.transpose((0, 2, 1))
@@ -710,18 +704,17 @@ def decode5(channel, index):
     count1 = 0x40
     count2 = 1
     for i in range(7):
-        a = a.reshape((count1, 2, count2))
-        tmp0, tmp1 = a[:,0], a[:,1]
+        a = a.reshape((-1, count1, 2, count2))
+        tmp0, tmp1 = a[:,:,0], a[:,:,1]
         c, d = list1Float[i].reshape((-1, count2)), list2Float[i].reshape((-1, count2))
-        a[:,0], a[:,1] = tmp0 * c - tmp1 * d, (tmp0 * d + tmp1 * c)[:,::-1]
+        a[:,:,0], a[:,:,1] = tmp0 * c - tmp1 * d, (tmp0 * d + tmp1 * c)[:,:,::-1]
         count1 >>= 1
         count2 <<= 1
-    a = a.flatten()
-    channel["wave"][index,:0x40] = a[0x40:] * list3Float[0] + channel["wav3"][:0x40]
-    channel["wave"][index, 0x40:] = a[:0x3f:-1] * list3Float[1] - channel["wav3"][0x40:]
-    channel["wav3"][:0x40] = a[0x3f::-1] * list3Float[1][::-1]
-    channel["wav3"][0x40:] = a[:0x40] * list3Float[0][::-1]
-
+    a = a.reshape((-1, 0x80))
+    wave[:,index,:0x40] = a[:,0x40:] * list3Float[0] + wav3[:,:0x40]
+    wave[:,index, 0x40:] = a[:,:0x3f:-1] * list3Float[1] - wav3[:,0x40:]
+    wav3[:,:0x40] = a[:,0x3f::-1] * list3Float[1][::-1]
+    wav3[:,0x40:] = a[:,:0x40] * list3Float[0][::-1]
 
 if __name__ == '__main__':
     import os, time
