@@ -400,7 +400,66 @@ class clData:
     def addBit(self, bitSize):
         self.bit += bitSize
 
-def hca_decode(data, cipher1=0xE0748978, cipher2=0xCF222F1F):
+
+def hca_decode(data, cipher1=0xE0748978, cipher2=0xCF222F1F, compile=True):
+    import platform
+    is_windows = platform.system() == 'Windows'
+    def check_exists(path):
+        try:
+            subprocess.check_output(['where' if is_windows else 'which', path], cwd=rcwd) # windows
+            return True
+        except Exception as e:
+            return False
+    def fallback():
+        return hca_decode_fallback(data, cipher1, cipher2)
+    import os
+    rpath = os.path.dirname(__file__) + "/"
+    rcwd = rpath
+    if rpath == "/":
+        rpath = ""
+        rcwd = None
+    import subprocess
+    if compile and os.path.exists(rpath + "hca_src"):
+        decoder = ("" if is_windows else "./") + 'HCADecoder'
+        # find executable
+        if not check_exists(decoder):
+            if check_exists("g++"):
+                # compile
+                try:
+                    subprocess.check_output(['g++', '-w', '-o', '../HCADecoder', 'clHCA.cpp', 'HCADecoder.cpp'], cwd=rpath + "hca_src")
+                except:
+                    pass
+        if check_exists(decoder):
+            from random import randrange
+            nonce1 = randrange(10 ** 24)
+            fname1 = rpath + "hca_src/{}.wav".format(nonce1)
+            nonce2 = randrange(10 ** 24)
+            fname2 = rpath + "hca_src/{}.hca".format(nonce2)
+            with open(fname2, "wb") as f:
+                f.write(data)
+                f.flush()
+            try:
+                decoderabs = rpath + 'HCADecoder'
+                subprocess.check_output([decoderabs, fname2, '-a', "{:08x}".format(cipher1), '-b', "{:08x}".format(cipher2), '-o', fname1], cwd=rcwd)
+            except:
+                import traceback
+                traceback.print_exc()
+            os.remove(fname2)
+            if os.path.exists(fname1):
+                import io
+                arr = io.BytesIO(open(fname1, "rb").read())
+                arr.seek(0)
+                os.remove(fname1)
+                return arr
+            else:
+                return fallback()
+        else:
+            return fallback()
+    else:
+        return fallback()
+
+def hca_decode_fallback(data, cipher1=0xE0748978, cipher2=0xCF222F1F):
+    # file should implement "write", "flush", and "seek"
     import io 
     f = r(data)
     # HCA
@@ -718,7 +777,12 @@ def decode5(index, block, wav3, wave):
 
 if __name__ == '__main__':
     import os, time
-    from acb_wrapper import parse_bytes
+    if __name__ == '__main__':
+        # absolute import
+        from acb_wrapper import parse_bytes
+    else:
+        # relative import
+        from .acb_wrapper import parse_bytes
     acbname = "test" # test.acb
     acbfile = open("{}.acb".format(acbname), "rb").read()
     acbcontent = parse_bytes(acbfile)
