@@ -19,10 +19,9 @@ class r(io.BytesIO):
         while True:
             c = self.read(1)
             if c[0] == 0:
-                return
+                return tmp
             else:
                 tmp += c
-        return tmp
     def peek(self, size):
         pt = self.tell()
         tmp = self.read(size)
