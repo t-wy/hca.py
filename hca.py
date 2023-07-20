@@ -10,7 +10,7 @@ class r(io.BytesIO):
         thr = 1 << (size << 3)
         tmp = self.readUInt(size)
         return tmp - thr if tmp >= thr >> 1 else tmp
-    def readStruct(self, form):        
+    def readStruct(self, form):
         import struct
         tmp = struct.Struct(form)
         return tmp.unpack(self.read(tmp.size))
@@ -49,7 +49,7 @@ def byteFloat(b):
     return struct.Struct(">f").unpack(b)[0]
 
 
-athList = [
+athList = [ # Absolute Threshold of Hearing
     0x78,0x5F,0x56,0x51,0x4E,0x4C,0x4B,0x49,0x48,0x48,0x47,0x46,0x46,0x45,0x45,0x45,
     0x44,0x44,0x44,0x44,0x43,0x43,0x43,0x43,0x43,0x43,0x42,0x42,0x42,0x42,0x42,0x42,
     0x42,0x42,0x41,0x41,0x41,0x41,0x41,0x41,0x41,0x41,0x41,0x41,0x40,0x40,0x40,0x40,
@@ -110,7 +110,20 @@ CRC16Table = [
     0x8243,0x0246,0x024C,0x8249,0x0258,0x825D,0x8257,0x0252,0x0270,0x8275,0x827F,0x027A,0x826B,0x026E,0x0264,0x8261,
     0x0220,0x8225,0x822F,0x022A,0x823B,0x023E,0x0234,0x8231,0x8213,0x0216,0x021C,0x8219,0x0208,0x820D,0x8207,0x0202,
 ] # 0x8005 / CRC-16-IBM
-# v2.0
+# v3.0
+scalelist = [
+    0x0E,0x0E,0x0E,0x0E,0x0E,0x0E,0x0D,0x0D,
+    0x0D,0x0D,0x0D,0x0D,0x0C,0x0C,0x0C,0x0C,
+    0x0C,0x0C,0x0B,0x0B,0x0B,0x0B,0x0B,0x0B,
+    0x0A,0x0A,0x0A,0x0A,0x0A,0x0A,0x0A,0x09,
+    0x09,0x09,0x09,0x09,0x09,0x08,0x08,0x08,
+    0x08,0x08,0x08,0x07,0x06,0x06,0x05,0x04,
+    0x04,0x04,0x03,0x03,0x03,0x02,0x02,0x02,
+    0x02,0x01,0x01,0x01,0x01,0x01,0x01,0x01,
+    0x01,0x01
+]
+"""
+v2.0
 scalelist = [
     0x0E,0x0E,0x0E,0x0E,0x0E,0x0E,0x0D,0x0D,
     0x0D,0x0D,0x0D,0x0D,0x0C,0x0C,0x0C,0x0C,
@@ -121,7 +134,6 @@ scalelist = [
     0x04,0x04,0x03,0x03,0x03,0x02,0x02,0x02,
     0x02,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
 ]
-"""
 v1.3
 scalelist = [
     0x0E,0x0E,0x0E,0x0E,0x0E,0x0E,0x0D,0x0D,
@@ -146,12 +158,12 @@ valueInt = [
 ]
 valueFloat = np.array([byteFloat(v) for v in valueInt])
 scaleInt = [
-    b"\x00\x00\x00\x00",b"\x3F\x2A\xAA\xAB",b"\x3E\xCC\xCC\xCD",b"\x3E\x92\x49\x25",b"\x3E\x63\x8E\x39",b"\x3E\x3A\x2E\x8C",b"\x3E\x1D\x89\xD9",b"\x3E\x08\x88\x89",
+    b"\x3F\x80\x00\x00",b"\x3F\x2A\xAA\xAB",b"\x3E\xCC\xCC\xCD",b"\x3E\x92\x49\x25",b"\x3E\x63\x8E\x39",b"\x3E\x3A\x2E\x8C",b"\x3E\x1D\x89\xD9",b"\x3E\x08\x88\x89",
     b"\x3D\x84\x21\x08",b"\x3D\x02\x08\x21",b"\x3C\x81\x02\x04",b"\x3C\x00\x80\x81",b"\x3B\x80\x40\x20",b"\x3B\x00\x20\x08",b"\x3A\x80\x10\x02",b"\x3A\x00\x08\x01",
 ]
 scaleFloat = np.array([byteFloat(v) for v in scaleInt])
-list1 = [ 0,2,3,3,4,4,4,4,5,6,7,8,9,10,11,12 ]
-list2 = [
+max_bit_table = [ 0,2,3,3,4,4,4,4,5,6,7,8,9,10,11,12 ]
+read_bit_table = [
     0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
     1,1,2,2,0,0,0,0,0,0,0,0,0,0,0,0,
     2,2,2,2,2,2,3,3,0,0,0,0,0,0,0,0,
@@ -161,7 +173,7 @@ list2 = [
     3,3,3,3,3,3,4,4,4,4,4,4,4,4,4,4,
     3,3,4,4,4,4,4,4,4,4,4,4,4,4,4,4,
 ]
-list3 = [
+read_val_table = [
     +0,+0,+0,+0,+0,+0,+0,+0,+0,+0,+0,+0,+0,+0,+0,+0,
     +0,+0,+1,-1,+0,+0,+0,+0,+0,+0,+0,+0,+0,+0,+0,+0,
     +0,+0,+1,+1,-1,-1,+2,-2,+0,+0,+0,+0,+0,+0,+0,+0,
@@ -171,7 +183,7 @@ list3 = [
     +0,+0,+1,+1,-1,-1,+2,-2,+3,-3,+4,-4,+5,-5,+6,-6,
     +0,+0,+1,-1,+2,-2,+3,-3,+4,-4,+5,-5,+6,-6,+7,-7,
 ]
-listInt3 = [[
+scale_conversion_table_hex = [[
     b"\x00\x00\x00\x00",b"\x00\x00\x00\x00",b"\x32\xA0\xB0\x51",b"\x32\xD6\x1B\x5E",b"\x33\x0E\xA4\x3A",b"\x33\x3E\x0F\x68",b"\x33\x7D\x3E\x0C",b"\x33\xA8\xB6\xD5",
     b"\x33\xE0\xCC\xDF",b"\x34\x15\xC3\xFF",b"\x34\x47\x8D\x75",b"\x34\x84\xF1\xF6",b"\x34\xB1\x23\xF6",b"\x34\xEC\x07\x19",b"\x35\x1D\x3E\xDA",b"\x35\x51\x84\xDF",
     b"\x35\x8B\x95\xC2",b"\x35\xB9\xFC\xD2",b"\x35\xF7\xD0\xDF",b"\x36\x25\x19\x58",b"\x36\x5B\xFB\xB8",b"\x36\x92\x8E\x72",b"\x36\xC3\x46\xCD",b"\x37\x02\x18\xAF",
@@ -190,9 +202,9 @@ listInt3 = [[
     b"\x49\x6A\xC0\xC7",b"\x49\x9C\x65\x73",b"\x49\xD0\x63\x34",b"\x4A\x0A\xD4\xC6",b"\x4A\x38\xFB\xAF",b"\x4A\x76\x7A\x41",b"\x4A\xA4\x35\x16",b"\x4A\xDA\xCB\x94",
     b"\x4B\x11\xC3\xD3",b"\x4B\x42\x38\xD2",b"\x4B\x81\x64\xD2",b"\x4B\xAC\x68\x97",b"\x4B\xE5\xB9\x07",b"\x4C\x19\x0B\x88",b"\x4C\x4B\xEC\x15",b"\x00\x00\x00\x00",
 ]]
-listFloat3 = np.array([byteFloat(v) for v in listInt3[0]] + [byteFloat(v) for v in listInt3[1]])
+scale_conversion_table = np.array([byteFloat(v) for v in scale_conversion_table_hex[0]] + [byteFloat(v) for v in scale_conversion_table_hex[1]])
 # v2.0
-listInt4 = [
+intensity_ratio_table_hex = [
     b"\x40\x00\x00\x00",b"\x3F\xED\xB6\xDB",b"\x3F\xDB\x6D\xB7",b"\x3F\xC9\x24\x92",b"\x3F\xB6\xDB\x6E",b"\x3F\xA4\x92\x49",b"\x3F\x92\x49\x25",b"\x3F\x80\x00\x00",
     b"\x3F\x5B\x6D\xB7",b"\x3F\x36\xDB\x6E",b"\x3F\x12\x49\x25",b"\x3E\xDB\x6D\xB7",b"\x3E\x92\x49\x25",b"\x3E\x12\x49\x25",b"\x00\x00\x00\x00",b"\x00\x00\x00\x00",
     b"\x00\x00\x00\x00",b"\x32\xA0\xB0\x51",b"\x32\xD6\x1B\x5E",b"\x33\x0E\xA4\x3A",b"\x33\x3E\x0F\x68",b"\x33\x7D\x3E\x0C",b"\x33\xA8\xB6\xD5",b"\x33\xE0\xCC\xDF",
@@ -212,8 +224,8 @@ listInt4 = [
     b"\x3F\x5B\x6D\xB7",b"\x3F\x36\xDB\x6E",b"\x3F\x12\x49\x25",b"\x3E\xDB\x6D\xB7",b"\x3E\x92\x49\x25",b"\x3E\x12\x49\x25",b"\x00\x00\x00\x00",b"\x00\x00\x00\x00",
 ]
 """
-listFloat4 = [byteFloat(v) for v in listInt4]
-list1Float = [
+intensity_ratio_table = [byteFloat(v) for v in intensity_ratio_table_hex]
+sin_table = [
     [
         b"\x3D\xA7\x3D\x75",b"\x3D\xA7\x3D\x75",b"\x3D\xA7\x3D\x75",b"\x3D\xA7\x3D\x75",b"\x3D\xA7\x3D\x75",b"\x3D\xA7\x3D\x75",b"\x3D\xA7\x3D\x75",b"\x3D\xA7\x3D\x75",
         b"\x3D\xA7\x3D\x75",b"\x3D\xA7\x3D\x75",b"\x3D\xA7\x3D\x75",b"\x3D\xA7\x3D\x75",b"\x3D\xA7\x3D\x75",b"\x3D\xA7\x3D\x75",b"\x3D\xA7\x3D\x75",b"\x3D\xA7\x3D\x75",
@@ -279,8 +291,8 @@ list1Float = [
         b"\x3F\x44\xE3\xF5",b"\x3F\x42\xDE\x29",b"\x3F\x40\xD0\xDA",b"\x3F\x3E\xBC\x1B",b"\x3F\x3C\xA0\x03",b"\x3F\x3A\x7C\xA4",b"\x3F\x38\x52\x16",b"\x3F\x36\x20\x6C",
     ]
 ]
-list1Float = np.array([[byteFloat(y) for y in x] for x in list1Float])
-list2Float = [
+sin_table = np.array([[byteFloat(y) for y in x] for x in sin_table])
+cos_table = [
     [
         b"\xBD\x0A\x8B\xD4",b"\x3D\x0A\x8B\xD4",b"\x3D\x0A\x8B\xD4",b"\xBD\x0A\x8B\xD4",b"\x3D\x0A\x8B\xD4",b"\xBD\x0A\x8B\xD4",b"\xBD\x0A\x8B\xD4",b"\x3D\x0A\x8B\xD4",
         b"\x3D\x0A\x8B\xD4",b"\xBD\x0A\x8B\xD4",b"\xBD\x0A\x8B\xD4",b"\x3D\x0A\x8B\xD4",b"\xBD\x0A\x8B\xD4",b"\x3D\x0A\x8B\xD4",b"\x3D\x0A\x8B\xD4",b"\xBD\x0A\x8B\xD4",
@@ -346,8 +358,8 @@ list2Float = [
         b"\xBF\x23\x9D\xA9",b"\xBF\x26\x05\x0A",b"\xBF\x28\x66\x05",b"\xBF\x2A\xC0\x82",b"\xBF\x2D\x14\x69",b"\xBF\x2F\x61\xA5",b"\xBF\x31\xA8\x1D",b"\xBF\x33\xE7\xBC",
     ]
 ]
-list2Float = np.array([[byteFloat(y) for y in x] for x in list2Float])
-list3Float = [
+cos_table = np.array([[byteFloat(y) for y in x] for x in cos_table])
+imdct_window = [
     [
         b"\x3A\x35\x04\xF0",b"\x3B\x01\x83\xB8",b"\x3B\x70\xC5\x38",b"\x3B\xBB\x92\x68",b"\x3C\x04\xA8\x09",b"\x3C\x30\x82\x00",b"\x3C\x61\x28\x4C",b"\x3C\x8B\x3F\x17",
         b"\x3C\xA8\x39\x92",b"\x3C\xC7\x7F\xBD",b"\x3C\xE9\x11\x10",b"\x3D\x06\x77\xCD",b"\x3D\x19\x8F\xC4",b"\x3D\x2D\xD3\x5C",b"\x3D\x43\x46\x43",b"\x3D\x59\xEC\xC1",
@@ -368,7 +380,7 @@ list3Float = [
         b"\xBF\x7F\xF6\x88",b"\xBF\x7F\xF9\xD0",b"\xBF\x7F\xFC\x32",b"\xBF\x7F\xFD\xDA",b"\xBF\x7F\xFE\xED",b"\xBF\x7F\xFF\x8F",b"\xBF\x7F\xFF\xDF",b"\xBF\x7F\xFF\xFC",
     ]
 ]
-list3Float = np.array([[byteFloat(y) for y in x] for x in list3Float])
+imdct_window = np.array([[byteFloat(y) for y in x] for x in imdct_window])
 
 def checkSum(f, cnt: int):
     temp = f.peek(cnt)
@@ -401,7 +413,7 @@ class clData:
         self.bit += bitSize
 
 
-def hca_decode(data, cipher1=0xE0748978, cipher2=0xCF222F1F, compile=True):
+def hca_decode(data, cipher1=None, cipher2=None, compile=True):
     import platform
     is_windows = platform.system() == 'Windows'
     def check_exists(path):
@@ -458,14 +470,14 @@ def hca_decode(data, cipher1=0xE0748978, cipher2=0xCF222F1F, compile=True):
     else:
         return fallback()
 
-def hca_decode_fallback(data, cipher1=0xE0748978, cipher2=0xCF222F1F):
+def hca_decode_fallback(data, cipher1=None, cipher2=None):
     # file should implement "write", "flush", and "seek"
-    import io 
+    import io
     f = r(data)
     # HCA
     _header = T("header", ("hca", "version", "dataOffset"))(*f.readStruct(">IHH"))
     if _header.hca & 0x7f7f7f7f != 0x48434100:
-        raise ValueError("Incorrect Header") 
+        raise ValueError("Incorrect Header")
     # FMT
     _format = T("format", ("fmt", "channelCount", *c("samplingRate", 3),
                            "blockCount", "muteHeader", "muteFooter"))(*f.readStruct(">IB3BIHH"))
@@ -475,17 +487,14 @@ def hca_decode_fallback(data, cipher1=0xE0748978, cipher2=0xCF222F1F):
     tmp = int(f.peek(4).hex(), 16)
     if tmp & 0x7f7f7f7f == 0x636F6D70:
         # COMP
-        _comp = T("compress", ("comp", "blockSize", "r01", "r02", "r03", "r04", "r05", "r06", "r07", "r08",
-                           "reserve1", "reserve2"))(*f.readStruct(">IH10B"))
+        _comp = T("compress", ("comp", "blockSize", "minRes", "maxRes", "trackCount", "channelconfig", "totalbandcount", "basebandcount", "stereobandcount", "bandsperhfrgroup", "ms_stereo", "reserved"))(*f.readStruct(">IH10B"))
     elif tmp & 0x7f7f7f7f == 0x64656300:
         # DEC
-        _dec = T("decode", ("dec", "blockSize", "r01", "r02", "count1", "count2", "r03r04",
+        _dec = T("decode", ("dec", "blockSize", "maxRes", "minRes", "totalbandcount", "basebandcount", "temp",
                            "enableCount2"))(*f.readStruct(">IH6B"))
-        _comp_r05 = _dec.r03r04 & 0xf, _dec.count1 + 1
-        _comp_r06 = (_dec.count2 if _dec.enableCount2 else _dec.count1) + 1
-        _comp = T("compress", ("comp", "blockSize", "r01", "r02", "r03", "r04", "r05", "r06", "r07", "r08",
-                           "reserve1", "reserve2"))(_dec.dec, _dec.blockSize, _dec.r01, _dec.r02,
-                                                    _dec.r03r04 >> 4, _comp_r05, _comp_r06, _comp_r05 - _comp_r06, 0)
+        _comp_r05 = _dec.temp & 0xf, _dec.totalbandcount + 1
+        _comp_r06 = (_dec.basebandcount if _dec.enableCount2 else _dec.totalbandcount) + 1
+        _comp = T("compress", ("comp", "blockSize", "minRes", "maxRes", "trackCount", "channelconfig", "totalbandcount", "basebandcount", "stereobandcount", "bandsperhfrgroup", "ms_stereo", "reserved"))(_dec.dec, _dec.blockSize, _dec.minRes, _dec.maxRes, _dec.temp >> 4, _comp_r05, _comp_r06, _comp_r05 - _comp_r06, 0)
     else:
         raise ValueError("Neither Compress nor Decode")
     # VBR
@@ -514,7 +523,7 @@ def hca_decode_fallback(data, cipher1=0xE0748978, cipher2=0xCF222F1F):
         _ciph = _ciph(*f.readStruct(">IH"))
     else:
         _ciph = _ciph(0, 0)
-    # RVA
+    # RVA - relative volume adjustment
     _rva = T("rva", ("rva", "volume"))
     if int(f.peek(4).hex(), 16) & 0x7f7f7f7f == 0x72766100:
         _rva = _rva(*f.readStruct(">If"))
@@ -535,7 +544,7 @@ def hca_decode_fallback(data, cipher1=0xE0748978, cipher2=0xCF222F1F):
         _athtable = [(0xff if index >= 0x28e else athList[index]) for i in range(0x80) for index in [(_format.samplingRate * i) >> 13]]
     if _ciph.type == 0:
         _ciphertable = [*range(256)]
-    elif _ciph.type == 1:
+    elif _ciph.type == 1: # encrypted
         v = 0
         _ciphertable = [0]
         for i in range(254):
@@ -547,89 +556,95 @@ def hca_decode_fallback(data, cipher1=0xE0748978, cipher2=0xCF222F1F):
     elif _ciph.type == 56:
         tmp1, tmp2 = cipher1, cipher2
         if tmp1 == 0:
-            tmp2 -= 1
-            tmp1 = 0xffffffff
-        else:
-            tmp1 -= 1
+            tmp2 = (tmp2 - 1) & 0xffffffff
+        tmp1 = (tmp1 - 1) & 0xffffffff
         t1 = []
         for i in range(7):
             t1.append(tmp1 & 0xff)
             tmp1 = (tmp1 >> 8) | ((tmp2 & 0xff) << 24)
             tmp2 >>= 8
         t2 = [
-            t1[1], t1[1] ^ t1[6], t1[2] ^ t1[3], t1[2],
-            t1[2] ^ t1[1], t1[3] ^ t1[4], t1[3], t1[3] ^ t1[2],
-            t1[4] ^ t1[5], t1[4], t1[4] ^ t1[3], t1[5] ^ t1[6],
-            t1[5], t1[5] ^ t1[4], t1[6] ^ t1[1], t1[6]
+            t1[1], t1[1] ^ t1[6], t1[2] ^ t1[3],
+            t1[2], t1[2] ^ t1[1], t1[3] ^ t1[4],
+            t1[3], t1[3] ^ t1[2], t1[4] ^ t1[5],
+            t1[4], t1[4] ^ t1[3], t1[5] ^ t1[6],
+            t1[5], t1[5] ^ t1[4], t1[6] ^ t1[1],
+            t1[6]
         ]
-        def createTable(key):
+        def createPRNGTable(seed):
             temp = []
-            tmp1 = ((key & 1) << 3) | 5
-            tmp2 = (key & 0xe) | 1
-            tmp3 = key >> 4
-            for i in range(16):
-                tmp3 = (tmp3 * tmp1 + tmp2) & 0xf
-                temp.append(tmp3)
+            a = ((seed & 1) << 3) | 5
+            c = (seed & 0xe) | 1
+            seed = seed >> 4
+            for _ in range(16):
+                seed = (seed * a + c) & 0xf
+                temp.append(seed)
             return temp
         t3 = []
-        t31 = createTable(t1[0])
+        high = createPRNGTable(t1[0])
         for i in range(16):
-            t32 = createTable(t2[i])
-            v = t31[i] << 4
+            low = createPRNGTable(t2[i])
+            high_mask = high[i] << 4
             for j in range(16):
-                t3.append(v | t32[j])
+                t3.append(high_mask | low[j])
         _ciphertable = [0]
-        v = 0
-        for i in range(256):
+        v = 17
+        for i in range(254):
+            while t3[v] in (0, 0xff):
+                v = (v + 17) & 0xff
+            _ciphertable.append(t3[v])
             v = (v + 17) & 0xff
-            if t3[v] not in (0, 0xff):
-                _ciphertable.append(t3[v])
-        while len(_ciphertable) < 255:
-            _ciphertable.append(0)
         _ciphertable.append(0xff)
     else:
         raise ValueError("Invalid Cipher Type")
-    if _comp.r03 == 0:
-        _comp = _comp._replace(r03=1)
-    if (_comp.r01, _comp.r02) != (1, 15):
-        raise ValueError("Invalid Compress")
+    if _comp.trackCount == 0:
+        _comp = _comp._replace(trackCount=1)
+    if _header.version <= 0x200:
+        if (_comp.minRes, _comp.maxRes) != (1, 15):
+            raise ValueError("Invalid Compress")
+    else:
+        if _comp.minRes > _comp.maxRes or _comp.maxRes > 15:
+            raise ValueError("Invalid Compress")
     ceil2 = lambda a, b: (a // b + bool(a % b)) if b > 0 else 0
-    _comp_r09 = ceil2(_comp.r05 - (_comp.r06 + _comp.r07), _comp.r08)
-    b = _format.channelCount // _comp.r03
+    hfr_group_count = ceil2(_comp.totalbandcount - (_comp.basebandcount + _comp.stereobandcount), _comp.bandsperhfrgroup)
+    b = _format.channelCount // _comp.trackCount
     tr = np.zeros(0x10, dtype=np.ubyte)
-    if _comp.r07 and b > 1:
+    if _comp.stereobandcount and b > 1:
         cursor = 0
-        for i in range(_comp.r03):
+        for i in range(_comp.trackCount):
             if b in [2, 3]:
                 tr[cursor: cursor+2] = [1, 2]
             elif b == 4:
                 tr[cursor: cursor+2] = [1, 2]
-                if _comp.r04 == 0:                    
+                if _comp.channelconfig == 0:
                     tr[cursor+2: cursor+4] = [1, 2]
             elif b == 5:
                 tr[cursor: cursor+2] = [1, 2]
-                if _comp.r04 <= 2:
+                if _comp.channelconfig <= 2:
                     tr[cursor+3: cursor+5] = [1, 2]
             elif b in [6, 7]:
                 tr[cursor: cursor+2] = [1, 2]
                 tr[cursor+4: cursor+6] = [1, 2]
             elif b == 8:
                 tr[cursor: cursor+2] = [1, 2]
-                tr[cursor+4: cursor+8] = [1, 2, 1, 2]                
+                tr[cursor+4: cursor+8] = [1, 2, 1, 2]
             cursor += b
-    _value3 = _comp.r06 + _comp.r07
-    _count = [_comp.r06 + (_comp.r07 if tr[i] != 2 else 0) for i in range(_format.channelCount)]
+    start_band = _comp.basebandcount + _comp.stereobandcount
+    coded_count = [_comp.basebandcount + (_comp.stereobandcount if tr[i] != 2 else 0) for i in range(_format.channelCount)]
     _channels = {
-        "value": [[0] * 0x80 for _ in range(_format.channelCount)],
-        "value2": [[0] * 0x80 for _ in range(_format.channelCount)],
-        "scale": [[0] * 0x80 for _ in range(_format.channelCount)],
-        "base": np.zeros((_format.channelCount, 0x80)),
-        "block": np.zeros((_format.channelCount, 0x80)),
+        "scale_factors": [[0] * 0x80 for _ in range(_format.channelCount)],
+        "intensity": [[0] * 0x08 for _ in range(_format.channelCount)],
+        "resolution": [[0] * 0x80 for _ in range(_format.channelCount)],
+        "noise": [[0] * 0x80 for _ in range(_format.channelCount)],
+        "noise_count": [0 for _ in range(_format.channelCount)],
+        "valid_count": [0 for _ in range(_format.channelCount)],
+        "gain": np.zeros((_format.channelCount, 0x80)),
+        "spectra": np.zeros((_format.channelCount, 0x80)),
         "wav3": np.zeros((_format.channelCount, 0x80)),
         "wave": np.zeros((_format.channelCount, 8, 0x80)),
     }
     refaddress = 0 + _header.dataOffset
-    count = _format.blockCount
+    block_count = _format.blockCount
     import wave, io
     file = io.BytesIO()
     wavfile = wave.open(file, "wb")
@@ -639,27 +654,31 @@ def hca_decode_fallback(data, cipher1=0xE0748978, cipher2=0xCF222F1F):
         "framerate": _format.samplingRate,
         "nframes": _comp.blockSize << 10,
         "comptype": 'NONE',
-        "compname": 'not compressed',        
+        "compname": 'not compressed',
     }).values())
-    for l in range(count):
+    random = 1
+    for l in range(block_count):
         address = refaddress + _comp.blockSize * l
         f.seek(address)
         if checkSum(f, _comp.blockSize):
             raise ValueError("Checksum not = 0")
-        d = clData([_ciphertable[i] for i in f.read(_comp.blockSize)])
-        magic = d.getBit(16)
+        dec_reader = clData([_ciphertable[i] for i in f.read(_comp.blockSize)])
+        magic = dec_reader.getBit(16)
         if magic == 0xffff:
-            a = (d.getBit(9) << 8) - d.getBit(7)
+            acc_noise_level = dec_reader.getBit(9)
+            eval_bound = dec_reader.getBit(7)
+            packed_noise_level = (acc_noise_level << 8) - eval_bound
             for i in range(_format.channelCount):
-                decode1(d, _comp_r09, a, _athtable, tr[i], _channels["base"][i], _value3, _count[i], _channels["scale"][i], _channels["value"][i], _channels["value2"][i])
+                _channels["noise_count"][i], _channels["valid_count"][i] = decode1(dec_reader, hfr_group_count, packed_noise_level, _athtable, tr[i], _channels["gain"][i], start_band, coded_count[i], _channels["resolution"][i], _channels["scale_factors"][i], _channels["intensity"][i], _channels["noise"][i], _header.version, _comp.maxRes, _comp.minRes)
             for i in range(8):
                 for j in range(_format.channelCount):
-                    decode2(d, _channels["block"][j], _channels["base"][j], _count[j], _channels["scale"][j]) # expensive
+                    decode2(dec_reader, _channels["spectra"][j], _channels["gain"][j], coded_count[j], _channels["resolution"][j]) # expensive
                 for j in range(_format.channelCount):
-                    decode3(_comp_r09, _comp.r08, _comp.r07 + _comp.r06, _comp.r05, _channels["block"][j], tr[j], _value3, _channels["value"][j])
+                    random = decode3a(_channels["spectra"][j], tr[j], _channels["scale_factors"][j], _comp.minRes, _channels["noise_count"][j], _channels["valid_count"][j], _channels["noise"][j], _comp.ms_stereo, random)
+                    decode3b(hfr_group_count, _comp.bandsperhfrgroup, start_band, _comp.totalbandcount, _channels["spectra"][j], tr[j], _channels["scale_factors"][j], _header.version)
                 for j in range(_format.channelCount - 1):
-                    decode4(_channels["value2"][j + 1][i], _comp.r05 - _comp.r06, _comp.r06, _comp.r07, _channels["block"][j], _channels["block"][j + 1], tr[j])
-                decode5(i, _channels["block"], _channels["wav3"], _channels["wave"]) # expensive
+                    decode4(_channels["intensity"][j + 1][i], _comp.totalbandcount, _comp.basebandcount, _comp.stereobandcount, _channels["spectra"][j], _channels["spectra"][j + 1], tr[j], _comp.ms_stereo)
+                decode5(i, _channels["spectra"], _channels["wav3"], _channels["wave"]) # expensive
         wav = _channels["wave"].reshape((_format.channelCount, -1)).T.ravel()
         wavfile.writeframes((wav.clip(-1, 1) * 0x7FFF).astype("<i2").tobytes())
     wavfile.close()
@@ -672,87 +691,196 @@ def bit16(inp):
     return bytes([inp & 0xff, inp >> 8])
 
 
-def decode1(data, a, b, athTable, channeltype, base, _value3, count, scale, value, value2):
-    v = data.getBit(3)
-    if v >= 6:
-        for i in range(count):
-            value[i] = data.getBit(6)
-    elif v:
-        v1 = data.getBit(6)
-        v2 = (1 << v) - 1
-        v3 = v2 >> 1
-        value[0] = v1
-        for i in range(1, count):
-            v4 = data.getBit(v)
-            if v4 != v2:
-                v1 += (v4 - v3)
+def decode1(data, hfr_group_count, packed_noise_level, athTable, channeltype, gain, _value3, coded_count, resolution, scale_factors, intensity, noise, version, max_res, min_res):
+    # unpack scalefactors
+    delta_bits = data.getBit(3)
+    c_count = coded_count
+    # extra_count added in v300
+    if channeltype == 2 or hfr_group_count <= 0 or version <= 0x200:
+        extra_count = 0
+    else:
+        extra_count = hfr_group_count
+        c_count += extra_count
+        assert c_count <= 128
+    if delta_bits >= 6:
+        for i in range(c_count):
+            scale_factors[i] = data.getBit(6)
+    elif delta_bits:
+        value = data.getBit(6)
+        expected_delta = (1 << delta_bits) - 1
+        half_expected_delta = expected_delta >> 1
+        scale_factors[0] = value
+        for i in range(1, c_count):
+            delta = data.getBit(delta_bits)
+            if delta != expected_delta:
+                value += delta - half_expected_delta
+                value &= 0x3f # added in v300
             else:
-                v1 = data.getBit(6)
-            value[i] = v1
+                value = data.getBit(6)
+            scale_factors[i] = value
     else:
         for i in range(0x80):
-            value[i] = 0
+            scale_factors[i] = 0
+    # extra_count added in v300
+    for i in range(extra_count):
+        scale_factors[0x7f - i] = scale_factors[c_count - i]
+    # unpack intensity
     if channeltype == 2:
-        v = data.checkBit(4)
-        value2[0] = v
-        if v < 15:
-            for i in range(8):
-                value2[i] = data.getBit(4)
-    else:
-        for i in range(a):
-            value[_value3 + i] = data.getBit(6)
-    for i in range(count):
-        v = value[i]
-        if v:
-            v = athTable[i] + ((b + i) >> 8) - ((v * 5) >> 1) + 1
-            if v < 0:
-                v = 15
-            elif v >= 0x39:
-                v = 1
+        if version <= 0x200:
+            value = data.checkBit(4)
+            intensity[0] = value
+            if value < 15:
+                for i in range(8):
+                    intensity[i] = data.getBit(4)
+        else:
+            value = data.getBit(4)
+            if value < 15:
+                delta_bits = data.getBit(2)
+                intensity[0] = value
+                if delta_bits == 3:
+                    for i in range(1, 8):
+                        intensity[i] = data.getBit(4)
+                else:
+                    bmax = (2 << delta_bits) - 1
+                    bits = delta_bits + 1
+                    for i in range(1, 8):
+                        delta = data.getBit(bits)
+                        if delta == bmax:
+                            value = data.getBit(4)
+                        else:
+                            value += delta - (bmax >> 1)
+                            assert value <= 0x0f
+                        intensity[i] = value
             else:
-                v = scalelist[v]
-            scale[i] = v
+                for i in range(8):
+                    intensity[i] = 7
+    else:
+        if version <= 0x200:
+            for i in range(hfr_group_count):
+                # scale_factors[_value3 + i] = data.getBit(6) # v200
+                scale_factors[0x80 - hfr_group_count + i] = data.getBit(6) # v300 lib
+    # calculate resolution
+    # restore coded_count
+    c_count = coded_count
+    noise_count = 0
+    valid_count = 0
+    for i in range(c_count):
+        scalefactor = scale_factors[i]
+        if scalefactor:
+            noise_level = athTable[i] + ((packed_noise_level + i) >> 8)
+            curve_position = noise_level + 1 - ((scalefactor * 5) >> 1)
+            if curve_position < 0:
+                new_resolution = 15
+            elif curve_position > 0x41: # > 0x39 => 1 for v200
+                new_resolution = 0
+            else:
+                new_resolution = scalelist[curve_position]
+            # added in v300 (min_res = 1 before so)
+            if new_resolution > max_res:
+                new_resolution = max_res
+            elif new_resolution < min_res:
+                new_resolution = min_res
+            if new_resolution < 1:
+                noise[noise_count] = i
+                noise_count += 1
+            else:
+                noise[0x7f - valid_count] = i
+                valid_count += 1
+            resolution[i] = new_resolution
         else:
-            scale[i] = 0
-    base[:count] = valueFloat[value[:count]] * scaleFloat[scale[:count]]
+            resolution[i] = 0
+    for i in range(c_count, 0x80):
+        resolution[i] = 0
+    # calculate_gain
+    gain[:c_count] = valueFloat[scale_factors[:c_count]] * scaleFloat[resolution[:c_count]]
+    return noise_count, valid_count
 
 
-def decode2(data, block, base, count, scale):
-    block[:] = 0
-    for i in range(count):
-        s = scale[i]
-        bitSize = list1[s]
-        v = data.getBit(bitSize)
-        if s < 8:
-            v += s << 4
-            data.addBit(list2[v] - bitSize)
-            f = list3[v]
+def decode2(data, spectra, gain, coded_count, resolution):
+    # dequantize_coefficients
+    spectra[:] = 0
+    for i in range(coded_count):
+        res = resolution[i]
+        bitSize = max_bit_table[res]
+        code = data.getBit(bitSize)
+        if res <= 7:
+            code += res << 4
+            data.addBit(read_bit_table[code] - bitSize)
+            qc = read_val_table[code]
         else:
-            f = v = (-1 if v & 1 else 1) * (v >> 1)
-            if not v:                
+            qc = code = (-1 if code & 1 else 1) * (code >> 1)
+            if not code:
                 data.addBit(-1)
-        block[i] = base[i] * f
+        spectra[i] = gain[i] * qc
+
+def decode3a(spectra, channeltype, scale_factors, min_res, noise_count, valid_count, noise, ms_stereo, random):
+    # reconstruct_noise
+    if min_res > 0:
+        return random
+    if valid_count == 0 or noise_count == 0:
+        return random
+    if ms_stereo and channeltype != 1:
+        return random
+    for i in range(noise_count):
+        random = (0x343FD * random + 0x269EC3) & 0x7fffffff
+        random_index = 0x80 - valid_count + (((random & 0x7fff) * valid_count) >> 15)
+        noise_index = noise[i]
+        valid_index = noise[random_index]
+        sc_index = 0x3e + scale_factors[noise_index] - scale_factors[valid_index]
+        sc_index &= ~(sc_index >> 31)
+        sc_index += 1
+        spectra[noise_index] = scale_conversion_table[sc_index] * spectra[valid_index]
+    # store random back
+    return random
+
+def decode3b(hfr_group_count, bands_per_hfr_group, start_band, total_band_count, spectra, channeltype, scale_factors, version):
+    # reconstruct_high_frequency
+    if bands_per_hfr_group == 0:
+        return
+    if channeltype == 2:
+        return
+    highband = start_band
+    lowband = start_band - 1
+    # offset = start_band # v200
+    offset = 128 - hfr_group_count # v300 lib
+    if version <= 0x200:
+        group_limit = hfr_group_count
+    else:
+        group_limit = hfr_group_count + (hfr_group_count < 0)
+        group_limit >>= 1
+    for group in range(hfr_group_count):
+        lowband_sub = int(group < group_limit)
+        for i in range(bands_per_hfr_group):
+            if highband >= total_band_count or lowband < 0:
+                break
+            sc_index = 0x3F + scale_factors[offset + group] - scale_factors[lowband]
+            sc_index &= ~(sc_index >> 31) # v300 lib
+            sc_index += 1
+            spectra[highband] = scale_conversion_table[sc_index] * spectra[lowband]
+            highband += 1
+            lowband -= lowband_sub
+    spectra[-1] = 0
 
 
-def decode3(a, b, c, d, block, channeltype, _value3, value):
-    if channeltype != 2 and b:
-        maxj = min(a * b, d - c)
-        temp = np.array(value)
-        block[c:c+maxj] = listFloat3[0x40 + temp[_value3:_value3+a].repeat(b)[:maxj] - temp[c-1:c-1-maxj:-1]] * \
-                                     block[c-1:c-1-maxj:-1]
-        block[-1] = 0
+def decode4(intensity, total_band_count, base_band_count, stereobandcount, spectra, nextspectra, channeltype, ms_stereo):
+    # apply_intensity_stereo
+    if channeltype == 1: # and stereobandcount:
+        ratio_l = intensity_ratio_table[intensity]
+        nextspectra[base_band_count:total_band_count] = spectra[base_band_count:total_band_count] * (2 - ratio_l) # (ratio_l - 2)
+        spectra[base_band_count:total_band_count] *= ratio_l
+    # apply_ms_stereo
+    if channeltype == 1 and ms_stereo:
+        ratio = byteFloat(bytes.fromhex("3F3504F3"))
+        coef_l = (spectra[base_band_count:total_band_count] + nextspectra[base_band_count:total_band_count]) * ratio
+        coef_r = (spectra[base_band_count:total_band_count] - nextspectra[base_band_count:total_band_count]) * ratio
+        spectra[base_band_count:total_band_count] = coef_l
+        nextspectra[base_band_count:total_band_count] = coef_r
 
-
-def decode4(nextchannelindex, a, b, c, block, nextblock, channeltype):
-    if channeltype == 1 and c:
-        f1 = listFloat4[nextchannelindex]
-        nextblock[b:b+a] = block[b:b+a] * (f1 - 2)
-        block[b:b+a] *= f1
-
-def decode5(index, block, wav3, wave):
+def decode5(index, spectra, wav3, wave):
+    # imdct_transform (DCT-IV)
     count1 = 1
-    count2 = 0x40    
-    a = block
+    count2 = 0x40
+    a = spectra
     for i in range(7):
         a = a.reshape((-1, count2, 2))
         tmp0, tmp1 = a[:, :, 0], a[:, :, 1]
@@ -765,15 +893,15 @@ def decode5(index, block, wav3, wave):
     for i in range(7):
         a = a.reshape((-1, count1, 2, count2))
         tmp0, tmp1 = a[:,:,0], a[:,:,1]
-        c, d = list1Float[i].reshape((-1, count2)), list2Float[i].reshape((-1, count2))
+        c, d = sin_table[i].reshape((-1, count2)), cos_table[i].reshape((-1, count2))
         a[:,:,0], a[:,:,1] = tmp0 * c - tmp1 * d, (tmp0 * d + tmp1 * c)[:,:,::-1]
         count1 >>= 1
         count2 <<= 1
     a = a.reshape((-1, 0x80))
-    wave[:,index,:0x40] = a[:,0x40:] * list3Float[0] + wav3[:,:0x40]
-    wave[:,index, 0x40:] = a[:,:0x3f:-1] * list3Float[1] - wav3[:,0x40:]
-    wav3[:,:0x40] = a[:,0x3f::-1] * list3Float[1][::-1]
-    wav3[:,0x40:] = a[:,:0x40] * list3Float[0][::-1]
+    wave[:,index,:0x40] = a[:,0x40:] * imdct_window[0] + wav3[:,:0x40]
+    wave[:,index, 0x40:] = a[:,:0x3f:-1] * imdct_window[1] - wav3[:,0x40:]
+    wav3[:,:0x40] = a[:,0x3f::-1] * imdct_window[1][::-1]
+    wav3[:,0x40:] = a[:,:0x40] * imdct_window[0][::-1]
 
 if __name__ == '__main__':
     import os, time
@@ -783,7 +911,7 @@ if __name__ == '__main__':
     else:
         # relative import
         from .acb_wrapper import parse_bytes
-    acbname = "test" # test.acb
+    acbname = "vs_0343_01_short" # test.acb
     acbfile = open("{}.acb".format(acbname), "rb").read()
     acbcontent = parse_bytes(acbfile)
     os.makedirs(acbname, exist_ok=True)
@@ -796,3 +924,4 @@ if __name__ == '__main__':
             wav = hca_decode(content, 0x89abcdef, 0x01234567)
             open("{}/{}.wav".format(acbname, file.track.name), "wb").write(wav.read())
     print("Time elapsed: {:.3f}s".format(time.time() - starttime))
+

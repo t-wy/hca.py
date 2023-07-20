@@ -496,7 +496,7 @@ bool clHCA::DecodeToWavefileStream(void* fpHCA, const char* filenameWAV, float v
 	// チェック
 	if (!(fpHCA && filenameWAV && (mode == 0 || mode == 8 || mode == 16 || mode == 24 || mode == 32) && loop >= 0))return false;
 
-	// 
+	//
 	FILE* fp1 = (FILE*)fpHCA;
 	unsigned int address = ftell(fp1);
 
@@ -942,6 +942,7 @@ bool clHCA::Decode(void* data, unsigned int size, unsigned int address) {
 			_comp_r06 = comp->r06;
 			_comp_r07 = comp->r07;
 			_comp_r08 = comp->r08;
+			_comp_re1 = comp->reserve1;
 			if (!((_blockSize >= 8 && _blockSize <= 0xFFFF) || (_blockSize == 0)))return false;
 			if (!(_comp_r01 >= 0 && _comp_r01 <= _comp_r02 && _comp_r02 <= 0x1F))return false;
 		}
@@ -1044,7 +1045,11 @@ bool clHCA::Decode(void* data, unsigned int size, unsigned int address) {
 
 																 // デコード準備
 		memset(_channel, 0, sizeof(_channel));
-		if (!(_comp_r01 == 1 && _comp_r02 == 15))return false;
+		if (_version <= 0x200) {
+			if (!(_comp_r01 == 1 && _comp_r02 == 15))return false;
+		} else {
+			if (_comp_r01 > _comp_r02 || _comp_r02 > 15)return false;
+		}
 		_comp_r09 = ceil2(_comp_r05 - (_comp_r06 + _comp_r07), _comp_r08);
 		char r[0x10]; memset(r, 0, sizeof(r));
 		unsigned int b = _channelCount / _comp_r03;
@@ -1067,7 +1072,7 @@ bool clHCA::Decode(void* data, unsigned int size, unsigned int address) {
 			_channel[i].value3 = &_channel[i].value[_comp_r06 + _comp_r07];
 			_channel[i].count = _comp_r06 + ((r[i] != 2) ? _comp_r07 : 0);
 		}
-
+		_random = 1;
 	}
 
 	// ブロックデータ
@@ -1080,11 +1085,11 @@ bool clHCA::Decode(void* data, unsigned int size, unsigned int address) {
 		int magic = d.GetBit(16);//0xFFFF固定
 		if (magic == 0xFFFF) {
 			int a = (d.GetBit(9) << 8) - d.GetBit(7);
-			for (unsigned int i = 0; i < _channelCount; i++)_channel[i].Decode1(&d, _comp_r09, a, _ath.GetTable());
+			for (unsigned int i = 0; i < _channelCount; i++)_channel[i].Decode1(&d, _comp_r09, a, _ath.GetTable(), _version, _comp_r01, _comp_r02);
 			for (int i = 0; i < 8; i++) {
 				for (unsigned int j = 0; j < _channelCount; j++)_channel[j].Decode2(&d);
-				for (unsigned int j = 0; j < _channelCount; j++)_channel[j].Decode3(_comp_r09, _comp_r08, _comp_r07 + _comp_r06, _comp_r05);
-				for (unsigned int j = 0; j < _channelCount - 1; j++)_channel[j].Decode4(i, _comp_r05 - _comp_r06, _comp_r06, _comp_r07);
+				for (unsigned int j = 0; j < _channelCount; j++)_channel[j].Decode3(_comp_r09, _comp_r08, _comp_r07 + _comp_r06, _comp_r05, _comp_re1, _version, _comp_r01, &_random);
+				for (unsigned int j = 0; j < _channelCount - 1; j++)_channel[j].Decode4(i, _comp_r05 - _comp_r06, _comp_r06, _comp_r07, _comp_re1);
 				for (unsigned int j = 0; j < _channelCount; j++)_channel[j].Decode5(i);
 			}
 		}
@@ -1097,9 +1102,9 @@ bool clHCA::Decode(void* data, unsigned int size, unsigned int address) {
 // デコード第一段階
 //   ベースデータの読み込み
 //--------------------------------------------------
-void clHCA::stChannel::Decode1(clData* data, unsigned int a, int b, unsigned char* ath) {
+void clHCA::stChannel::Decode1(clData* data, unsigned int a, int b, unsigned char* ath, unsigned int _version, unsigned int min, unsigned int max) {
 	static unsigned char scalelist[] = {
-		// v2.0
+		// v3.0
 		0x0E,0x0E,0x0E,0x0E,0x0E,0x0E,0x0D,0x0D,
 		0x0D,0x0D,0x0D,0x0D,0x0C,0x0C,0x0C,0x0C,
 		0x0C,0x0C,0x0B,0x0B,0x0B,0x0B,0x0B,0x0B,
@@ -1107,7 +1112,17 @@ void clHCA::stChannel::Decode1(clData* data, unsigned int a, int b, unsigned cha
 		0x09,0x09,0x09,0x09,0x09,0x08,0x08,0x08,
 		0x08,0x08,0x08,0x07,0x06,0x06,0x05,0x04,
 		0x04,0x04,0x03,0x03,0x03,0x02,0x02,0x02,
-		0x02,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+		0x02,0x01,0x01,0x01,0x01,0x01,0x01,0x01,
+		0x01,0x01
+		// v2.0
+		//0x0E,0x0E,0x0E,0x0E,0x0E,0x0E,0x0D,0x0D,
+		//0x0D,0x0D,0x0D,0x0D,0x0C,0x0C,0x0C,0x0C,
+		//0x0C,0x0C,0x0B,0x0B,0x0B,0x0B,0x0B,0x0B,
+		//0x0A,0x0A,0x0A,0x0A,0x0A,0x0A,0x0A,0x09,
+		//0x09,0x09,0x09,0x09,0x09,0x08,0x08,0x08,
+		//0x08,0x08,0x08,0x07,0x06,0x06,0x05,0x04,
+		//0x04,0x04,0x03,0x03,0x03,0x02,0x02,0x02,
+		//0x02,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
 		// v1.3
 		//0x0E,0x0E,0x0E,0x0E,0x0E,0x0E,0x0D,0x0D,
 		//0x0D,0x0D,0x0D,0x0D,0x0C,0x0C,0x0C,0x0C,
@@ -1128,48 +1143,96 @@ void clHCA::stChannel::Decode1(clData* data, unsigned int a, int b, unsigned cha
 		0x3E1C6573,0x3E506334,0x3E8AD4C6,0x3EB8FBAF,0x3EF67A41,0x3F243516,0x3F5ACB94,0x3F91C3D3,
 		0x3FC238D2,0x400164D2,0x402C6897,0x4065B907,0x40990B88,0x40CBEC15,0x4107DB35,0x413504F3,
 	};
+	// no index 0 in v2.0.0, and the record was 0x00000000 then
 	static unsigned int scaleInt[] = {
-		0x00000000,0x3F2AAAAB,0x3ECCCCCD,0x3E924925,0x3E638E39,0x3E3A2E8C,0x3E1D89D9,0x3E088889,
+		0x3F800000,0x3F2AAAAB,0x3ECCCCCD,0x3E924925,0x3E638E39,0x3E3A2E8C,0x3E1D89D9,0x3E088889,
 		0x3D842108,0x3D020821,0x3C810204,0x3C008081,0x3B804020,0x3B002008,0x3A801002,0x3A000801,
 	};
 	static float* valueFloat = (float*)valueInt;
 	static float* scaleFloat = (float*)scaleInt;
 	int v = data->GetBit(3);
+	// v3.0.0 addition
+	unsigned int extra_count = 0;
+	unsigned int c_count = count;
+	if (type != 2 && a > 0 && _version > 0x200) {
+		extra_count = a;
+		c_count += extra_count;
+	}
 	if (v >= 6) {
-		for (unsigned int i = 0; i < count; i++)value[i] = data->GetBit(6);
+		for (unsigned int i = 0; i < c_count; i++)value[i] = data->GetBit(6);
 	}
 	else if (v) {
 		int v1 = data->GetBit(6), v2 = (1 << v) - 1, v3 = v2 >> 1, v4;
 		value[0] = v1;
-		for (unsigned int i = 1; i < count; i++) {
+		for (unsigned int i = 1; i < c_count; i++) {
 			v4 = data->GetBit(v);
-			if (v4 != v2) { v1 += v4 - v3; }
-			else { v1 = data->GetBit(6); }
+			if (v4 != v2) {
+				v1 += v4 - v3; 
+				v1 &= 0x3f; // v3.0.0
+			}
+			else v1 = data->GetBit(6);
 			value[i] = v1;
 		}
 	}
 	else {
 		memset(value, 0, 0x80);
 	}
+	for (unsigned int i = 0; i < extra_count; i++) {
+		value[0x7F - i] = value[c_count - i];
+	}
 	if (type == 2) {
-		v = data->CheckBit(4); value2[0] = v;
-		if (v < 15)for (int i = 0; i < 8; i++)value2[i] = data->GetBit(4);
+		if (_version <= 0x200) {
+			v = data->CheckBit(4); value2[0] = v;
+			if (v < 15)for (int i = 0; i < 8; i++)value2[i] = data->GetBit(4);
+		} else {
+			v = data->GetBit(4);
+			if (v < 15) {
+				unsigned char db = data->GetBit(2);
+				value2[0] = v;
+				if (db == 3) {
+					for (int i = 1; i < 8; i++)value2[i] = data->GetBit(4);
+				} else {
+					unsigned char bm = (2 << db) - 1;
+					unsigned char bt = db + 1;
+					for (int i = 1; i < 8; i++) {
+						unsigned da = data->GetBit(bt);
+						if (da == bm) {
+							v = data->GetBit(4);
+						} else {
+							v += da - (bm >> 1);
+						}
+						value2[i] = v;
+					}
+				}
+			} else {
+				for (int i = 0; i < 8; i++)value2[i] = 7;
+			}
+		}
 	}
 	else {
-		for (unsigned int i = 0; i < a; i++)value3[i] = data->GetBit(6);
+		if (_version <= 0x200) for (unsigned int i = 0; i < a; i++)value[0x80 - a + i] = data->GetBit(6);
 	}
-	for (unsigned int i = 0; i < count; i++) {
+	c_count = count;
+	unsigned int nc = 0;
+	unsigned int vc = 0;
+	for (unsigned int i = 0; i < c_count; i++) {
 		v = value[i];
 		if (v) {
 			v = ath[i] + ((b + i) >> 8) - ((v * 5) / 2) + 1;
 			if (v < 0)v = 15;
-			else if (v >= 0x39)v = 1;
+			else if (v >= 0x42)v = 0;
 			else v = scalelist[v];
+			if (v > max) v = max;
+			else if (v < min) v = min;
+			if (v < 1) noises[nc++] = i;
+			else noises[0x7F - (vc++)] = i;
 		}
 		scale[i] = v;
 	}
-	memset(&scale[count], 0, 0x80 - count);
-	for (unsigned int i = 0; i < count; i++)base[i] = valueFloat[value[i]] * scaleFloat[scale[i]];
+	ncount = nc;
+	vcount = vc;
+	memset(&scale[count], 0, 0x80 - c_count);
+	for (unsigned int i = 0; i < c_count; i++)base[i] = valueFloat[value[i]] * scaleFloat[scale[i]];
 }
 
 //--------------------------------------------------
@@ -1224,35 +1287,58 @@ void clHCA::stChannel::Decode2(clData* data) {
 // デコード第三段階
 //   ブロックデータ修正その１ ※v2.0から追加
 //--------------------------------------------------
-void clHCA::stChannel::Decode3(unsigned int a, unsigned int b, unsigned int c, unsigned int d) {
+void clHCA::stChannel::Decode3(unsigned int a, unsigned int b, unsigned int c, unsigned int d, unsigned int e, unsigned int _version, unsigned int min, unsigned int *_random) {
+	static unsigned int listInt[2][0x40] = {
+		{
+			0x00000000,0x00000000,0x32A0B051,0x32D61B5E,0x330EA43A,0x333E0F68,0x337D3E0C,0x33A8B6D5,
+			0x33E0CCDF,0x3415C3FF,0x34478D75,0x3484F1F6,0x34B123F6,0x34EC0719,0x351D3EDA,0x355184DF,
+			0x358B95C2,0x35B9FCD2,0x35F7D0DF,0x36251958,0x365BFBB8,0x36928E72,0x36C346CD,0x370218AF,
+			0x372D583F,0x3766F85B,0x3799E046,0x37CD078C,0x3808980F,0x38360094,0x38728177,0x38A18FAF,
+			0x38D744FD,0x390F6A81,0x393F179A,0x397E9E11,0x39A9A15B,0x39E2055B,0x3A16942D,0x3A48A2D8,
+			0x3A85AAC3,0x3AB21A32,0x3AED4F30,0x3B1E196E,0x3B52A81E,0x3B8C57CA,0x3BBAFF5B,0x3BF9295A,
+			0x3C25FED7,0x3C5D2D82,0x3C935A2B,0x3CC4563F,0x3D02CD87,0x3D2E4934,0x3D68396A,0x3D9AB62B,
+			0x3DCE248C,0x3E0955EE,0x3E36FD92,0x3E73D290,0x3EA27043,0x3ED87039,0x3F1031DC,0x3F40213B,
+		},{
+			0x3F800000,0x3FAA8D26,0x3FE33F89,0x4017657D,0x4049B9BE,0x40866491,0x40B311C4,0x40EE9910,
+			0x411EF532,0x4153CCF1,0x418D1ADF,0x41BC034A,0x41FA83B3,0x4226E595,0x425E60F5,0x429426FF,
+			0x42C5672A,0x43038359,0x432F3B79,0x43697C38,0x439B8D3A,0x43CF4319,0x440A14D5,0x4437FBF0,
+			0x4475257D,0x44A3520F,0x44D99D16,0x4510FA4D,0x45412C4D,0x4580B1ED,0x45AB7A3A,0x45E47B6D,
+			0x461837F0,0x464AD226,0x46871F62,0x46B40AAF,0x46EFE4BA,0x471FD228,0x4754F35B,0x478DDF04,
+			0x47BD08A4,0x47FBDFED,0x4827CD94,0x485F9613,0x4894F4F0,0x48C67991,0x49043A29,0x49302F0E,
+			0x496AC0C7,0x499C6573,0x49D06334,0x4A0AD4C6,0x4A38FBAF,0x4A767A41,0x4AA43516,0x4ADACB94,
+			0x4B11C3D3,0x4B4238D2,0x4B8164D2,0x4BAC6897,0x4BE5B907,0x4C190B88,0x4C4BEC15,0x00000000,
+		}
+	};
+	if (min <= 0 && vcount > 0 && ncount > 0 & (!e || type == 1)) {
+		int ri, ni, vi, sn, sv, si;
+		static float* listFloat = (float*)listInt[0];
+		for (unsigned int i = 0; i < ncount; i++) {
+			*_random = 0x343FD * *_random + 0x269EC3;
+			ri = 0x80 - vcount + (((*_random & 0x7FFF) * vcount) >> 15);
+			ni = noises[i];
+			vi = noises[ri];
+			si = value[ni] - value[vi] + 62;
+			si &= ~(si >> 31);
+			block[ni] = listFloat[++si] * block[vi];
+		}
+	}
 	if (type != 2 && b > 0) {
-		static unsigned int listInt[2][0x40] = {
-			{
-				0x00000000,0x00000000,0x32A0B051,0x32D61B5E,0x330EA43A,0x333E0F68,0x337D3E0C,0x33A8B6D5,
-				0x33E0CCDF,0x3415C3FF,0x34478D75,0x3484F1F6,0x34B123F6,0x34EC0719,0x351D3EDA,0x355184DF,
-				0x358B95C2,0x35B9FCD2,0x35F7D0DF,0x36251958,0x365BFBB8,0x36928E72,0x36C346CD,0x370218AF,
-				0x372D583F,0x3766F85B,0x3799E046,0x37CD078C,0x3808980F,0x38360094,0x38728177,0x38A18FAF,
-				0x38D744FD,0x390F6A81,0x393F179A,0x397E9E11,0x39A9A15B,0x39E2055B,0x3A16942D,0x3A48A2D8,
-				0x3A85AAC3,0x3AB21A32,0x3AED4F30,0x3B1E196E,0x3B52A81E,0x3B8C57CA,0x3BBAFF5B,0x3BF9295A,
-				0x3C25FED7,0x3C5D2D82,0x3C935A2B,0x3CC4563F,0x3D02CD87,0x3D2E4934,0x3D68396A,0x3D9AB62B,
-				0x3DCE248C,0x3E0955EE,0x3E36FD92,0x3E73D290,0x3EA27043,0x3ED87039,0x3F1031DC,0x3F40213B,
-			},{
-				0x3F800000,0x3FAA8D26,0x3FE33F89,0x4017657D,0x4049B9BE,0x40866491,0x40B311C4,0x40EE9910,
-				0x411EF532,0x4153CCF1,0x418D1ADF,0x41BC034A,0x41FA83B3,0x4226E595,0x425E60F5,0x429426FF,
-				0x42C5672A,0x43038359,0x432F3B79,0x43697C38,0x439B8D3A,0x43CF4319,0x440A14D5,0x4437FBF0,
-				0x4475257D,0x44A3520F,0x44D99D16,0x4510FA4D,0x45412C4D,0x4580B1ED,0x45AB7A3A,0x45E47B6D,
-				0x461837F0,0x464AD226,0x46871F62,0x46B40AAF,0x46EFE4BA,0x471FD228,0x4754F35B,0x478DDF04,
-				0x47BD08A4,0x47FBDFED,0x4827CD94,0x485F9613,0x4894F4F0,0x48C67991,0x49043A29,0x49302F0E,
-				0x496AC0C7,0x499C6573,0x49D06334,0x4A0AD4C6,0x4A38FBAF,0x4A767A41,0x4AA43516,0x4ADACB94,
-				0x4B11C3D3,0x4B4238D2,0x4B8164D2,0x4BAC6897,0x4BE5B907,0x4C190B88,0x4C4BEC15,0x00000000,
-			}
-		};
 		unsigned int k = c;
 		unsigned int l = c - 1;
-		static float* listFloat = (float*)listInt[1];
+		unsigned int os = 0x80 - a; // v3.0.0
+		int si;
+		unsigned int gl = a;
+		if (_version > 0x200) {
+			gl += (a < 0); /* ??? */
+			gl >>= 1;
+		}
+		static float* listFloat = (float*)listInt[0];
 		for (unsigned int i = 0; i < a; i++) {
-			for (unsigned int j = 0; j < b && k < d; j++, l--) {
-				block[k++] = listFloat[value3[i] - value[l]] * block[l];
+			unsigned int ls = i < gl ? 1 : 0;
+			for (unsigned int j = 0; j < b && k < d && l <= c - 1; j++, l-=ls) {
+				si = value[os + i] - value[l] + 63;
+				si &= ~(si >> 31);
+				block[k++] = listFloat[++si] * block[l];
 			}
 		}
 		block[0x80 - 1] = 0;
@@ -1263,19 +1349,31 @@ void clHCA::stChannel::Decode3(unsigned int a, unsigned int b, unsigned int c, u
 // デコード第四段階
 //   ブロックデータ修正その２
 //--------------------------------------------------
-void clHCA::stChannel::Decode4(int index, unsigned int a, unsigned int b, unsigned int c) {
-	if (type == 1 && c) {
+void clHCA::stChannel::Decode4(int index, unsigned int a, unsigned int b, unsigned int c, unsigned int d) {
+	if (type == 1) {
 		static unsigned int listInt[] = {
 			0x40000000,0x3FEDB6DB,0x3FDB6DB7,0x3FC92492,0x3FB6DB6E,0x3FA49249,0x3F924925,0x3F800000,
 			0x3F5B6DB7,0x3F36DB6E,0x3F124925,0x3EDB6DB7,0x3E924925,0x3E124925,0x00000000,0x00000000,
 		};
 		float f1 = ((float*)listInt)[this[1].value2[index]];
-		float f2 = f1 - 2.0f;
+		float f2 = 2.0f - f1;
 		float* s = &block[b];
 		float* d = &this[1].block[b];
 		for (unsigned int i = 0; i < a; i++) {
 			*(d++) = *s * f2;
 			*(s++) = *s * f1;
+		}
+	}
+	if (type == 1 & d) {
+		unsigned int ratio0 = 0x3F3504F3;
+		float ratio = *(float*)&ratio0;
+		float* s = &block[b];
+		float* d = &this[1].block[b];
+		float t;
+		for (unsigned int i = 0; i < a; i++) {
+			t = *d;
+			*(d++) = (*s - *d) * ratio;
+			*(s++) = (*s + t) * ratio;
 		}
 	}
 }

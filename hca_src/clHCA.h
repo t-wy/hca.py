@@ -114,6 +114,7 @@ private:
 	unsigned int _comp_r06;
 	unsigned int _comp_r07;
 	unsigned int _comp_r08;
+	unsigned int _comp_re1;
 	unsigned int _comp_r09;
 	unsigned int _vbr_r01;
 	unsigned int _vbr_r02;
@@ -128,6 +129,7 @@ private:
 	unsigned int _ciph_key2;
 	float _rva_volume;
 	unsigned int _comm_len;
+	unsigned int _random;
 	char* _comm_comment;
 	class clATH {
 	public:
@@ -167,18 +169,21 @@ private:
 		float base[0x80];
 		char value[0x80];
 		char scale[0x80];
+		char noises[0x80];
 		char value2[8];
 		int type;
 		char* value3;
 		unsigned int count;
+		unsigned int ncount;
+		unsigned int vcount;
 		float wav1[0x80];
 		float wav2[0x80];
 		float wav3[0x80];
 		float wave[8][0x80];
-		void Decode1(clData* data, unsigned int a, int b, unsigned char* ath);
+		void Decode1(clData* data, unsigned int a, int b, unsigned char* ath, unsigned int _version, unsigned int min, unsigned int max);
 		void Decode2(clData* data);
-		void Decode3(unsigned int a, unsigned int b, unsigned int c, unsigned int d);
-		void Decode4(int index, unsigned int a, unsigned int b, unsigned int c);
+		void Decode3(unsigned int a, unsigned int b, unsigned int c, unsigned int d, unsigned int e, unsigned int _version, unsigned int min, unsigned int *_random);
+		void Decode4(int index, unsigned int a, unsigned int b, unsigned int c, unsigned int d);
 		void Decode5(int index);
 	}_channel[0x10];
 	bool Decode(void* data, unsigned int size, unsigned int address);
