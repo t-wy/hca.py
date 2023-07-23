@@ -535,24 +535,25 @@ def build_cipher_table(_type, cipher1=None, cipher2=None):
     raise ValueError("Invalid Cipher Type")
 
 def hca_parse(data, cipher1=None, cipher2=None):
+    reader = r(data)
     hca_mask = 0x7f7f7f7f # not 0xffffffff as chunks' magic may be obfuscated when encrypted with key
     # HCA
-    _header = T("header", ("hca", "version", "dataOffset"))(*data.readStruct(">IHH"))
+    _header = T("header", ("hca", "version", "dataOffset"))(*reader.readStruct(">IHH"))
     if _header.hca & hca_mask != 0x48434100:
         raise ValueError("Incorrect Header")
     # FMT
     _format = T("format", ("fmt", "channel_count", *c("sampling_rate", 3),
-                           "block_count", "mute_header", "mute_footer"))(*data.readStruct(">IB3BIHH"))
+                           "block_count", "mute_header", "mute_footer"))(*reader.readStruct(">IB3BIHH"))
     _format = combineBytes(_format, "sampling_rate", 3)
     if _format.fmt & hca_mask != 0x666D7400:
         raise ValueError("Incorrect Format")
-    tmp = int(data.peek(4).hex(), 16)
+    tmp = int(reader.peek(4).hex(), 16)
     if tmp & hca_mask == 0x636F6D70:
         # COMP
-        _comp = T("compress", ("comp", "block_size", "min_resolution", "max_resolution", "trackCount", "channel_config", "total_band_count", "base_band_count", "stereo_band_count", "bands_per_hfr_group", "ms_stereo", "reserved"))(*data.readStruct(">IH10B"))
+        _comp = T("compress", ("comp", "block_size", "min_resolution", "max_resolution", "trackCount", "channel_config", "total_band_count", "base_band_count", "stereo_band_count", "bands_per_hfr_group", "ms_stereo", "reserved"))(*reader.readStruct(">IH10B"))
     elif tmp & hca_mask == 0x64656300:
         # DEC
-        _dec = T("decode", ("dec", "block_size", "min_resolution", "max_resolution", "total_band_count", "base_band_count", "temp", "stereoType"))(*data.readStruct(">IH6B"))
+        _dec = T("decode", ("dec", "block_size", "min_resolution", "max_resolution", "total_band_count", "base_band_count", "temp", "stereoType"))(*reader.readStruct(">IH6B"))
         _dec.total_band_count += 1
         _dec.base_band_count += 1
         if _dec.stereoType == 0:
@@ -571,70 +572,64 @@ def hca_parse(data, cipher1=None, cipher2=None):
             raise ValueError("Invalid Compress")
     # VBR
     _vbr = T("vbr", ("vbr", "r01", "r02"))
-    if int(data.peek(4).hex(), 16) & hca_mask == 0x76627200:
-        _vbr = _vbr(*data.readStruct(">IHH"))
+    if int(reader.peek(4).hex(), 16) & hca_mask == 0x76627200:
+        _vbr = _vbr(*reader.readStruct(">IHH"))
     else:
         _vbr = _vbr(0, 0, 0)
     # ATH
     _ath = T("ath", ("ath", "type"))
-    if int(data.peek(4).hex(), 16) & hca_mask == 0x61746800:
-        _ath = _ath(*data.readStruct(">IH"))
+    if int(reader.peek(4).hex(), 16) & hca_mask == 0x61746800:
+        _ath = _ath(*reader.readStruct(">IH"))
     else:
         _ath = _ath(0, int(_header.version < 0x200))
     # LOOP
     _loop = T("loop", ("loop", "start", "end", "count", "r01", "flag"))
-    if int(data.peek(4).hex(), 16) & hca_mask == 0x6c6f6f70:
-        _loop = _loop(*data.readStruct(">IIIHH"), True)
+    if int(reader.peek(4).hex(), 16) & hca_mask == 0x6c6f6f70:
+        _loop = _loop(*reader.readStruct(">IIIHH"), True)
     else:
         _loop = _loop(0, 0, 0, 0, 0x400, False)
     # CIPH
     _ciph = T("cipher", ("ciph", "type"))
-    if int(data.peek(4).hex(), 16) & hca_mask == 0x63697068:
-        _ciph = _ciph(*data.readStruct(">IH"))
+    if int(reader.peek(4).hex(), 16) & hca_mask == 0x63697068:
+        _ciph = _ciph(*reader.readStruct(">IH"))
     else:
         _ciph = _ciph(0, 0)
     # RVA - relative volume adjustment
     _rva = T("rva", ("rva", "volume"))
-    if int(data.peek(4).hex(), 16) & hca_mask == 0x72766100:
-        _rva = _rva(*data.readStruct(">If"))
+    if int(reader.peek(4).hex(), 16) & hca_mask == 0x72766100:
+        _rva = _rva(*reader.readStruct(">If"))
     else:
         _rva = _rva(0, 1)
     # COMM
     _comm = T("comm", ("comm", "len", "comment"))
-    if int(data.peek(4).hex(), 16) & hca_mask == 0x636f6d6d:
-        _comm = _comm(*data.readStruct(">IB"), data.readNullString())
+    if int(reader.peek(4).hex(), 16) & hca_mask == 0x636f6d6d:
+        _comm = _comm(*reader.readStruct(">IB"), reader.readNullString())
     else:
         _comm = _comm(0, 1, None)
     if _ciph.type not in (0, 1, 56):
         raise ValueError("Invalid Cipher Type")
+
+    # all extra information that stays unchanged during extraction
     _ciphertable = build_cipher_table(_ciph.type, cipher1, cipher2)
     _athtable = build_ath_table(_ath.type, _format.sampling_rate)
-    return T("HCAFile", ("header", "format", "comp", "vbr", "ath", "loop", "ciph", "rva", "comm", "ciphertable", "athtable", "random"))(_header, _format, _comp, _vbr, _ath, _loop, _ciph, _rva, _comm, _ciphertable, _athtable, {"state": 1})
-
-def hca_decode_fallback(data, cipher1=None, cipher2=None):
-    import io
-    # file should implement "write", "flush", and "seek"
-    f = r(data)
-    hca_file = hca_parse(f, cipher1, cipher2)
-
     ceil2 = lambda a, b: (a // b + bool(a % b)) if b > 0 else 0
-    hfr_group_count = ceil2(hca_file.comp.total_band_count - (hca_file.comp.base_band_count + hca_file.comp.stereo_band_count), hca_file.comp.bands_per_hfr_group)
+    _hfr_group_count = ceil2(_comp.total_band_count - (_comp.base_band_count + _comp.stereo_band_count), _comp.bands_per_hfr_group)
 
     # 0: discrete, 1: primary, 2: secondary
-    channels_per_track = hca_file.format.channel_count // hca_file.comp.trackCount
-    channel_type = np.zeros(0x10, dtype=np.ubyte)
-    if hca_file.comp.stereo_band_count and channels_per_track > 1:
+    channels_per_track = _format.channel_count // _comp.trackCount
+    channel_type = [0] * 0x10
+    if _comp.stereo_band_count and channels_per_track > 1:
         cursor = 0
-        for i in range(hca_file.comp.trackCount):
+        for i in range(_comp.trackCount):
             if channels_per_track in [2, 3]:
                 channel_type[cursor: cursor+2] = [1, 2]
             elif channels_per_track == 4:
                 channel_type[cursor: cursor+2] = [1, 2]
-                if hca_file.comp.channel_config == 0:
+                if _comp.channel_config == 0:
                     channel_type[cursor+2: cursor+4] = [1, 2]
             elif channels_per_track == 5:
                 channel_type[cursor: cursor+2] = [1, 2]
-                if hca_file.comp.channel_config <= 2:
+                if _comp.channel_config <= 2:
                     channel_type[cursor+3: cursor+5] = [1, 2]
             elif channels_per_track in [6, 7]:
                 channel_type[cursor: cursor+2] = [1, 2]
@@ -643,8 +638,15 @@ def hca_decode_fallback(data, cipher1=None, cipher2=None):
                 channel_type[cursor: cursor+2] = [1, 2]
                 channel_type[cursor+4: cursor+8] = [1, 2, 1, 2]
             cursor += channels_per_track
-    start_band = hca_file.comp.base_band_count + hca_file.comp.stereo_band_count
-    coded_count = [hca_file.comp.base_band_count + (hca_file.comp.stereo_band_count if channel_type[i] != 2 else 0) for i in range(hca_file.format.channel_count)]
+    start_band = _comp.base_band_count + _comp.stereo_band_count
+    coded_count = [_comp.base_band_count + (_comp.stereo_band_count if channel_type[i] != 2 else 0) for i in range(_format.channel_count)]
+
+    return T("HCAFile", ("header", "format", "comp", "vbr", "ath", "loop", "ciph", "rva", "comm", "ciphertable", "athtable", "hfr_group_count", "channels_per_track", "start_band", "coded_count", "channel_type", "random"))(_header, _format, _comp, _vbr, _ath, _loop, _ciph, _rva, _comm, _ciphertable, _athtable, _hfr_group_count, channels_per_track, start_band, coded_count, channel_type, {"state": 1})
+
+def hca_decode_fallback(data, cipher1=None, cipher2=None):
+    # file should implement "write", "flush", and "seek"
+    hca_file = hca_parse(data, cipher1, cipher2)
+    # initialize all variables to be used
     _channels = {
         "scale_factors": [[0] * 0x80 for _ in range(hca_file.format.channel_count)],
         "intensity": [[0] * 0x08 for _ in range(hca_file.format.channel_count)],
@@ -668,6 +670,8 @@ def hca_decode_fallback(data, cipher1=None, cipher2=None):
         "comptype": 'NONE',
         "compname": 'not compressed',
     }).values())
+
+    f = r(data)
     for l in range(hca_file.format.block_count):
         address = hca_file.header.dataOffset + hca_file.comp.block_size * l
         f.seek(address)
@@ -680,15 +684,15 @@ def hca_decode_fallback(data, cipher1=None, cipher2=None):
             eval_bound = dec_reader.getBit(7)
             packed_noise_level = (acc_noise_level << 8) - eval_bound
             for i in range(hca_file.format.channel_count):
-                _channels["noise_count"][i], _channels["valid_count"][i] = decode1(dec_reader, hfr_group_count, packed_noise_level, hca_file.athtable, channel_type[i], _channels["gain"][i], coded_count[i], _channels["resolution"][i], _channels["scale_factors"][i], _channels["intensity"][i], _channels["noise"][i], hca_file.header.version, hca_file.comp.max_resolution, hca_file.comp.min_resolution)
+                _channels["noise_count"][i], _channels["valid_count"][i] = decode1(dec_reader, hca_file.hfr_group_count, packed_noise_level, hca_file.athtable, hca_file.channel_type[i], _channels["gain"][i], hca_file.coded_count[i], _channels["resolution"][i], _channels["scale_factors"][i], _channels["intensity"][i], _channels["noise"][i], hca_file.header.version, hca_file.comp.max_resolution, hca_file.comp.min_resolution)
             for i in range(8):
                 for j in range(hca_file.format.channel_count):
-                    decode2(dec_reader, _channels["spectra"][j], _channels["gain"][j], coded_count[j], _channels["resolution"][j]) # expensive
+                    decode2(dec_reader, _channels["spectra"][j], _channels["gain"][j], hca_file.coded_count[j], _channels["resolution"][j]) # expensive
                 for j in range(hca_file.format.channel_count):
-                    decode3a(_channels["spectra"][j], channel_type[j], _channels["scale_factors"][j], hca_file.comp.min_resolution, _channels["noise_count"][j], _channels["valid_count"][j], _channels["noise"][j], hca_file.comp.ms_stereo, hca_file.random)
-                    decode3b(hfr_group_count, hca_file.comp.bands_per_hfr_group, start_band, hca_file.comp.total_band_count, _channels["spectra"][j], channel_type[j], _channels["scale_factors"][j], hca_file.header.version)
+                    decode3a(_channels["spectra"][j], hca_file.channel_type[j], _channels["scale_factors"][j], hca_file.comp.min_resolution, _channels["noise_count"][j], _channels["valid_count"][j], _channels["noise"][j], hca_file.comp.ms_stereo, hca_file.random)
+                    decode3b(hca_file.hfr_group_count, hca_file.comp.bands_per_hfr_group, hca_file.start_band, hca_file.comp.total_band_count, _channels["spectra"][j], hca_file.channel_type[j], _channels["scale_factors"][j], hca_file.header.version)
                 for j in range(hca_file.format.channel_count - 1):
-                    decode4(_channels["intensity"][j + 1][i], hca_file.comp.total_band_count, hca_file.comp.base_band_count, hca_file.comp.stereo_band_count, _channels["spectra"][j], _channels["spectra"][j + 1], channel_type[j], hca_file.comp.ms_stereo)
+                    decode4(_channels["intensity"][j + 1][i], hca_file.comp.total_band_count, hca_file.comp.base_band_count, hca_file.comp.stereo_band_count, _channels["spectra"][j], _channels["spectra"][j + 1], hca_file.channel_type[j], hca_file.comp.ms_stereo)
                 decode5(i, _channels["spectra"], _channels["wav3"], _channels["wave"]) # expensive
         wav = _channels["wave"].reshape((hca_file.format.channel_count, -1)).T.ravel()
         wavfile.writeframes((wav.clip(-1, 1) * 0x7FFF).astype("<i2").tobytes())
@@ -696,11 +700,9 @@ def hca_decode_fallback(data, cipher1=None, cipher2=None):
     file.seek(0)
     return file
 
-
 def bit16(inp):
     inp = inp & 0xffff
     return bytes([inp & 0xff, inp >> 8])
-
 
 def decode1(data, hfr_group_count, packed_noise_level, athTable, channeltype, gain, coded_count, resolution, scale_factors, intensity, noise, version, max_res, min_res):
     # unpack scalefactors
@@ -931,7 +933,7 @@ if __name__ == '__main__':
         content = file.binary.read()
         open("{}/{}".format(acbname, filename), "wb").write(content)
         if file.extension == "hca":
-            wav = hca_decode(content, 0x89abcdef, 0x01234567)
+            wav = hca_decode(content, 0x89abcdef, 0x01234567, False)
             open("{}/{}.wav".format(acbname, file.track.name), "wb").write(wav.read())
     print("Time elapsed: {:.3f}s".format(time.time() - starttime))
 
