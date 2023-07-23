@@ -666,7 +666,8 @@ def hca_decode_fallback(data, cipher1=None, cipher2=None):
         "nchannels": hca_file.format.channel_count,
         "sampwidth": 2, # 16 bit
         "framerate": hca_file.format.sampling_rate,
-        "nframes": hca_file.comp.block_size << 10,
+        # each block contains 1024 (8 * 0x80) samples for each channel
+        "nframes": hca_file.format.block_count << 10,
         "comptype": 'NONE',
         "compname": 'not compressed',
     }).values())
