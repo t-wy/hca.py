@@ -459,7 +459,8 @@ def hca_decode(data, cipher1=None, cipher2=None, compile=True):
             os.remove(fname2)
             if os.path.exists(fname1):
                 import io
-                arr = io.BytesIO(open(fname1, "rb").read())
+                with open(fname1, "rb") as f:
+                    arr = io.BytesIO(f.read())
                 arr.seek(0)
                 os.remove(fname1)
                 return arr
@@ -924,17 +925,20 @@ if __name__ == '__main__':
     else:
         # relative import
         from .acb_wrapper import parse_bytes
-    acbname = "vs_0343_01_short" # test.acb
-    acbfile = open("{}.acb".format(acbname), "rb").read()
+    acbname = "test" # test.acb
+    with open("{}.acb".format(acbname), "rb") as f:
+        acbfile = f.read()
     acbcontent = parse_bytes(acbfile)
     os.makedirs(acbname, exist_ok=True)
     starttime = time.time()
     for file in acbcontent:
         filename = "{}.{}".format(file.track.name, file.extension)
         content = file.binary.read()
-        open("{}/{}".format(acbname, filename), "wb").write(content)
+        with open("{}/{}".format(acbname, filename), "wb") as f:
+            f.write(content)
         if file.extension == "hca":
             wav = hca_decode(content, 0x89abcdef, 0x01234567, False)
-            open("{}/{}.wav".format(acbname, file.track.name), "wb").write(wav.read())
+            with open("{}/{}.wav".format(acbname, file.track.name), "wb") as f:
+                f.write(wav.read())
     print("Time elapsed: {:.3f}s".format(time.time() - starttime))
 

@@ -480,8 +480,8 @@ class ACBFile(object):
 
 
 def find_awb(path):
-    if re.search(r"\.acb$", path):
-        awb_path = re.sub(r"\.acb$", ".awb", path)
+    if path.endswith(".acb"):
+        awb_path = path[:-4] + ".awb"
         if os.path.exists(awb_path):
             return awb_path
 
