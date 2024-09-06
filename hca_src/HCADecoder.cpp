@@ -3,11 +3,13 @@
 // インクルード
 //--------------------------------------------------
 #define WIN32_LEAN_AND_MEAN
-#ifdef __linux__
-	#include <cstring>
-	#define MAX_PATH 260
-#elif _WIN32
+#if _WIN32
 	#include <Windows.h>
+#else
+	#include <cstring>
+#endif
+#ifndef MAX_PATH
+	#define MAX_PATH 260
 #endif
 #include <stdio.h>
 #include "clHCA.h"
@@ -21,7 +23,7 @@
 //--------------------------------------------------
 // 文字列を10進数とみなして数値に変換(簡易版)
 //--------------------------------------------------
-int atoi(const char* s) {
+int _atoi(const char* s) {
 	int r = 0;
 	bool sign = false; if (*s == '+') { s++; }
 	else if (*s == '-') { sign = true; s++; }
@@ -32,7 +34,7 @@ int atoi(const char* s) {
 	}
 	return sign ? -r : r;
 }
-float atof(const char* s) {
+float _atof(const char* s) {
 	int r1 = 0, r2 = 0, c = 1;
 	bool sign = false; if (*s == '+') { s++; }
 	else if (*s == '-') { sign = true; s++; }
@@ -56,8 +58,8 @@ float atof(const char* s) {
 //--------------------------------------------------
 // 文字列を16進数とみなして数値に変換
 //--------------------------------------------------
-int atoi16(const char* s) {
-	int r = 0;
+long long atoi16(const char* s) {
+	long long r = 0;
 	bool sign = false; if (*s == '+') { s++; }
 	else if (*s == '-') { sign = true; s++; }
 	while (*s) {
@@ -80,8 +82,8 @@ int main(int argc, char* argv[]) {
 	char* filenameOut = NULL;
 	//bool decodeFlg=false;
 	float volume = 1;
-	unsigned int ciphKey1 = 0xE0748978;
-	unsigned int ciphKey2 = 0xCF222F1F;
+	unsigned long long ciphKey = 0xCF222F1FE0748978LL;
+	unsigned short subkey = 0;
 	int mode = 16;
 	int loop = 0;
 	bool info = false;
@@ -91,11 +93,13 @@ int main(int argc, char* argv[]) {
 			switch (argv[i][1]) {
 			case 'o':if (i + 1 < argc) { filenameOut = argv[++i]; }break;
 				//case 'd':decodeFlg=true;break;
-			case 'v':volume = (float)atof(argv[++i]); break;
-			case 'a':if (i + 1 < argc) { ciphKey1 = atoi16(argv[++i]); }break;
-			case 'b':if (i + 1 < argc) { ciphKey2 = atoi16(argv[++i]); }break;
-			case 'm':if (i + 1 < argc) { mode = atoi(argv[++i]); }break;
-			case 'l':if (i + 1 < argc) { loop = atoi(argv[++i]); }break;
+			case 'v':volume = (float)_atof(argv[++i]); break;
+			case 'a':if (i + 1 < argc) { ciphKey ^= (ciphKey & 0xffffffffLL) ^ atoi16(argv[++i]); }break;
+			case 'b':if (i + 1 < argc) { ciphKey ^= (ciphKey & 0xffffffff00000000LL) ^ (atoi16(argv[++i]) << 32); }break;
+			case 'k':if (i + 1 < argc) { ciphKey = atoi16(argv[++i]); }break;
+			case 's':if (i + 1 < argc) { subkey = _atoi(argv[++i]); }break;
+			case 'm':if (i + 1 < argc) { mode = _atoi(argv[++i]); }break;
+			case 'l':if (i + 1 < argc) { loop = _atoi(argv[++i]); }break;
 			case 'i':info = true; break;
 			case 'c':decrypt = true; break;
 			}
@@ -103,6 +107,9 @@ int main(int argc, char* argv[]) {
 		else if (*argv[i]) {
 			argv[count++] = argv[i];
 		}
+	}
+	if (subkey) {
+		ciphKey = ciphKey * ( ((unsigned long long)subkey << 16u) | ((unsigned short)~subkey + 2u) );
 	}
 
 	//if(decodeFlg){
@@ -134,7 +141,7 @@ int main(int argc, char* argv[]) {
 		// ヘッダ情報のみ表示
 		if (info) {
 			printf("%s のヘッダ情報\n", argv[i]);
-			clHCA hca(0, 0);
+			clHCA hca(0);
 			hca.PrintInfo(argv[i]);
 			printf("\n");
 		}
@@ -142,7 +149,7 @@ int main(int argc, char* argv[]) {
 		// 復号化
 		else if (decrypt) {
 			printf("%s を復号化中...\n", argv[i]);
-			clHCA hca(ciphKey1, ciphKey2);
+			clHCA hca(ciphKey);
 			if (!hca.Decrypt(argv[i])) {
 				printf("Error: 復号化に失敗しました。\n");
 			}
@@ -151,7 +158,7 @@ int main(int argc, char* argv[]) {
 		// デコード
 		else {
 			printf("%s をデコード中...\n", argv[i]);
-			clHCA hca(ciphKey1, ciphKey2);
+			clHCA hca(ciphKey);
 			if (!hca.DecodeToWavefile(argv[i], filenameOut, volume, mode, loop)) {
 				printf("Error: デコードに失敗しました。\n");
 			}

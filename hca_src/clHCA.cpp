@@ -35,8 +35,8 @@ inline unsigned int ceil2(unsigned int a, unsigned int b) { return (b > 0) ? (a 
 //--------------------------------------------------
 // コンストラクタ
 //--------------------------------------------------
-clHCA::clHCA(unsigned int ciphKey1, unsigned int ciphKey2) :
-	_ciph_key1(ciphKey1), _ciph_key2(ciphKey2), _ath(), _cipher() {}
+clHCA::clHCA(unsigned long long ciphKey) :
+	_ciph_key(ciphKey), _ath(), _cipher() {}
 
 //--------------------------------------------------
 // HCAチェック
@@ -441,7 +441,7 @@ bool clHCA::Decrypt(const char* filenameHCA) {
 
 	// 初期化
 	if (!_ath.Init(_ath_type, _samplingRate)) { delete[] data; fclose(fp); return false; }
-	if (!_cipher.Init(_ciph_type, _ciph_key1, _ciph_key2)) { delete[] data; fclose(fp); return false; }
+	if (!_cipher.Init(_ciph_type, _ciph_key)) { delete[] data; fclose(fp); return false; }
 	unsigned char* data2 = new unsigned char[_blockSize];
 	if (!data2) { delete[] data; fclose(fp); return false; }
 
@@ -782,12 +782,12 @@ void clHCA::clATH::Init1(unsigned int key) {
 // 暗号化テーブル
 //--------------------------------------------------
 clHCA::clCipher::clCipher() { Init0(); }
-bool clHCA::clCipher::Init(int type, unsigned int key1, unsigned int key2) {
-	if (!(key1 | key2))type = 0;
+bool clHCA::clCipher::Init(int type, unsigned long long key) {
+	if (!key)type = 0;
 	switch (type) {
 	case 0:Init0(); break;
 	case 1:Init1(); break;
-	case 56:Init56(key1, key2); break;
+	case 56:Init56(key); break;
 	default:return false;
 	}
 	return true;
@@ -807,16 +807,14 @@ void clHCA::clCipher::Init1(void) {
 	_table[0] = 0;
 	_table[0xFF] = 0xFF;
 }
-void clHCA::clCipher::Init56(unsigned int key1, unsigned int key2) {
+void clHCA::clCipher::Init56(unsigned long long key) {
 
 	// テーブル1を生成
 	unsigned char t1[8];
-	if (!key1)key2--;
-	key1--;
+	key--;
 	for (int i = 0; i < 7; i++) {
-		t1[i] = key1;
-		key1 = (key1 >> 8) | (key2 << 24);
-		key2 >>= 8;
+		t1[i] = key;
+		key >>= 8;
 	}
 
 	// テーブル2
@@ -1038,7 +1036,7 @@ bool clHCA::Decode(void* data, unsigned int size, unsigned int address) {
 
 		// 初期化
 		if (!_ath.Init(_ath_type, _samplingRate))return false;
-		if (!_cipher.Init(_ciph_type, _ciph_key1, _ciph_key2))return false;
+		if (!_cipher.Init(_ciph_type, _ciph_key))return false;
 
 		// 値チェック(ヘッダの改変ミスによるエラーを回避するため)
 		if (!_comp_r03)_comp_r03 = 1;//0での除算を防ぐため

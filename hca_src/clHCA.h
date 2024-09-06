@@ -5,7 +5,7 @@
 //--------------------------------------------------
 class clHCA {
 public:
-	clHCA(unsigned int ciphKey1 = 0xE0748978, unsigned int ciphKey2 = 0xCF222F1F);
+	clHCA(unsigned long long ciphKey = 0xCF222F1FE0748978LL);
 
 	// HCAチェック
 	static bool CheckFile(void* data, unsigned int size);
@@ -125,8 +125,7 @@ private:
 	unsigned int _loop_r01;
 	bool _loopFlg;
 	unsigned int _ciph_type;
-	unsigned int _ciph_key1;
-	unsigned int _ciph_key2;
+	unsigned long long _ciph_key;
 	float _rva_volume;
 	unsigned int _comm_len;
 	unsigned int _random;
@@ -144,13 +143,13 @@ private:
 	class clCipher {
 	public:
 		clCipher();
-		bool Init(int type, unsigned int key1, unsigned int key2);
+		bool Init(int type, unsigned long long key);
 		void Mask(void* data, int size);
 	private:
 		unsigned char _table[0x100];
 		void Init0(void);
 		void Init1(void);
-		void Init56(unsigned int key1, unsigned int key2);
+		void Init56(unsigned long long key);
 		void Init56_CreateTable(unsigned char* table, unsigned char key);
 	}_cipher;
 	class clData {

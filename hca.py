@@ -423,15 +423,13 @@ def hca_decode(data, cipher=None, subkey=None, compile=True):
         except Exception as e:
             return False
     def fallback():
-        return hca_decode_fallback(data, cipher)
+        return hca_decode_fallback(data, cipher, subkey)
     import os
     rpath = os.path.dirname(__file__) + "/"
     rcwd = rpath
     if rpath == "/":
         rpath = ""
         rcwd = None
-    if subkey is not None and subkey != 0:
-        cipher = (cipher * ((subkey << 16) | (((subkey & 0xFFFF) ^ 0xFFFF) + 2))) & 0xFFFFFFFFFFFFFFFF
     import subprocess
     if compile and os.path.exists(rpath + "hca_src"):
         decoder = ("" if is_windows else "./") + 'HCADecoder'
@@ -454,7 +452,7 @@ def hca_decode(data, cipher=None, subkey=None, compile=True):
                 f.flush()
             try:
                 decoderabs = rpath + 'HCADecoder'
-                subprocess.check_output([decoderabs, fname2, '-a', "{:08x}".format(cipher & 0xFFFFFFFF), '-b', "{:08x}".format(cipher >> 32), '-o', fname1], cwd=rcwd)
+                subprocess.check_output([decoderabs, fname2, '-k', "{:016x}".format(cipher), '-s', str(subkey), '-o', fname1], cwd=rcwd)
             except:
                 import traceback
                 traceback.print_exc()
@@ -479,7 +477,7 @@ def build_ath_table(_type, sampling_rate):
     else:
         return tuple((0xff if index >= 0x28e else athList[index]) for i in range(0x80) for index in [(sampling_rate * i) >> 13])
 
-def build_cipher_table(_type, cipher=None):
+def build_cipher_table(_type, cipher=None, subkey=None):
     if _type == 0:
         return tuple(range(256))
     if _type == 1: # encrypted
@@ -493,6 +491,8 @@ def build_cipher_table(_type, cipher=None):
         _ciphertable.append(0xff)
         return tuple(_ciphertable)
     if _type == 56:
+        if subkey is not None and subkey != 0:
+            cipher = (cipher * ((subkey << 16) | (((subkey & 0xFFFF) ^ 0xFFFF) + 2))) & 0xFFFFFFFFFFFFFFFF
         cipher = (cipher - 1) & 0xFFFFFFFFFFFFFFFF
         t1 = []
         for i in range(7):
@@ -533,7 +533,7 @@ def build_cipher_table(_type, cipher=None):
         return tuple(_ciphertable)
     raise ValueError("Invalid Cipher Type")
 
-def hca_parse(data, cipher=None):
+def hca_parse(data, cipher=None, subkey=None):
     reader = r(data)
     hca_mask = 0x7f7f7f7f # not 0xffffffff as chunks' magic may be obfuscated when encrypted with key
     # HCA
@@ -609,7 +609,7 @@ def hca_parse(data, cipher=None):
         raise ValueError("Invalid Cipher Type")
 
     # all extra information that stays unchanged during extraction
-    _ciphertable = build_cipher_table(_ciph.type, cipher)
+    _ciphertable = build_cipher_table(_ciph.type, cipher, subkey)
     _athtable = build_ath_table(_ath.type, _format.sampling_rate)
     ceil2 = lambda a, b: (a // b + bool(a % b)) if b > 0 else 0
     _hfr_group_count = ceil2(_comp.total_band_count - (_comp.base_band_count + _comp.stereo_band_count), _comp.bands_per_hfr_group)
@@ -642,9 +642,9 @@ def hca_parse(data, cipher=None):
 
     return T("HCAFile", ("header", "format", "comp", "vbr", "ath", "loop", "ciph", "rva", "comm", "ciphertable", "athtable", "hfr_group_count", "channels_per_track", "start_band", "coded_count", "channel_type", "random"))(_header, _format, _comp, _vbr, _ath, _loop, _ciph, _rva, _comm, _ciphertable, _athtable, _hfr_group_count, channels_per_track, start_band, coded_count, channel_type, {"state": 1})
 
-def hca_decode_fallback(data, cipher):
+def hca_decode_fallback(data, cipher, subkey):
     # file should implement "write", "flush", and "seek"
-    hca_file = hca_parse(data, cipher)
+    hca_file = hca_parse(data, cipher, subkey)
     # initialize all variables to be used
     _channels = {
         "scale_factors": [[0] * 0x80 for _ in range(hca_file.format.channel_count)],
