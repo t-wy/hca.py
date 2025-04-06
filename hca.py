@@ -5,7 +5,7 @@ import io, numpy as np
 from collections import namedtuple as T
 class r(io.BytesIO):
     def readUInt(self, size):
-        return int(self.read(size).hex(), 16)
+        return int.from_bytes(self.read(size), byteorder='big')
     def readInt(self, size):
         thr = 1 << (size << 3)
         tmp = self.readUInt(size)
@@ -546,7 +546,7 @@ def hca_parse(data, cipher=None, subkey=None):
     _format = combineBytes(_format, "sampling_rate", 3)
     if _format.fmt & hca_mask != 0x666D7400:
         raise ValueError("Incorrect Format")
-    tmp = int(reader.peek(4).hex(), 16)
+    tmp = int.from_bytes(reader.peek(4), byteorder='big')
     if tmp & hca_mask == 0x636F6D70:
         # COMP
         _comp = T("compress", ("comp", "block_size", "min_resolution", "max_resolution", "trackCount", "channel_config", "total_band_count", "base_band_count", "stereo_band_count", "bands_per_hfr_group", "ms_stereo", "reserved"))(*reader.readStruct(">IH10B"))
@@ -571,37 +571,37 @@ def hca_parse(data, cipher=None, subkey=None):
             raise ValueError("Invalid Compress")
     # VBR
     _vbr = T("vbr", ("vbr", "r01", "r02"))
-    if int(reader.peek(4).hex(), 16) & hca_mask == 0x76627200:
+    if int.from_bytes(reader.peek(4), byteorder='big') & hca_mask == 0x76627200:
         _vbr = _vbr(*reader.readStruct(">IHH"))
     else:
         _vbr = _vbr(0, 0, 0)
     # ATH
     _ath = T("ath", ("ath", "type"))
-    if int(reader.peek(4).hex(), 16) & hca_mask == 0x61746800:
+    if int.from_bytes(reader.peek(4), byteorder='big') & hca_mask == 0x61746800:
         _ath = _ath(*reader.readStruct(">IH"))
     else:
         _ath = _ath(0, int(_header.version < 0x200))
     # LOOP
     _loop = T("loop", ("loop", "start", "end", "count", "r01", "flag"))
-    if int(reader.peek(4).hex(), 16) & hca_mask == 0x6c6f6f70:
+    if int.from_bytes(reader.peek(4), byteorder='big') & hca_mask == 0x6c6f6f70:
         _loop = _loop(*reader.readStruct(">IIIHH"), True)
     else:
         _loop = _loop(0, 0, 0, 0, 0x400, False)
     # CIPH
     _ciph = T("cipher", ("ciph", "type"))
-    if int(reader.peek(4).hex(), 16) & hca_mask == 0x63697068:
+    if int.from_bytes(reader.peek(4), byteorder='big') & hca_mask == 0x63697068:
         _ciph = _ciph(*reader.readStruct(">IH"))
     else:
         _ciph = _ciph(0, 0)
     # RVA - relative volume adjustment
     _rva = T("rva", ("rva", "volume"))
-    if int(reader.peek(4).hex(), 16) & hca_mask == 0x72766100:
+    if int.from_bytes(reader.peek(4), byteorder='big') & hca_mask == 0x72766100:
         _rva = _rva(*reader.readStruct(">If"))
     else:
         _rva = _rva(0, 1)
     # COMM
     _comm = T("comm", ("comm", "len", "comment"))
-    if int(reader.peek(4).hex(), 16) & hca_mask == 0x636f6d6d:
+    if int.from_bytes(reader.peek(4), byteorder='big') & hca_mask == 0x636f6d6d:
         _comm = _comm(*reader.readStruct(">IB"), reader.readNullString())
     else:
         _comm = _comm(0, 1, None)
