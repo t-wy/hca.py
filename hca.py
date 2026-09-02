@@ -154,24 +154,24 @@ scaleInt = [
 scaleFloat = np.array([byteFloat(v) for v in scaleInt])
 max_bit_table = [ 0,2,3,3,4,4,4,4,5,6,7,8,9,10,11,12 ]
 read_bit_table = [
-    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, # 0 bit
-    1,1,2,2,0,0,0,0,0,0,0,0,0,0,0,0, # 2 bits
-    2,2,2,2,2,2,3,3,0,0,0,0,0,0,0,0, # 3 bits
-    2,2,3,3,3,3,3,3,0,0,0,0,0,0,0,0, # 3 bits
-    3,3,3,3,3,3,3,3,3,3,3,3,3,3,4,4, # 4 bits
-    3,3,3,3,3,3,3,3,3,3,4,4,4,4,4,4, # 4 bits
-    3,3,3,3,3,3,4,4,4,4,4,4,4,4,4,4, # 4 bits
-    3,3,4,4,4,4,4,4,4,4,4,4,4,4,4,4, # 4 bits
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0], # 0 bit
+    [1,1,2,2,0,0,0,0,0,0,0,0,0,0,0,0], # 2 bits
+    [2,2,2,2,2,2,3,3,0,0,0,0,0,0,0,0], # 3 bits
+    [2,2,3,3,3,3,3,3,0,0,0,0,0,0,0,0], # 3 bits
+    [3,3,3,3,3,3,3,3,3,3,3,3,3,3,4,4], # 4 bits
+    [3,3,3,3,3,3,3,3,3,3,4,4,4,4,4,4], # 4 bits
+    [3,3,3,3,3,3,4,4,4,4,4,4,4,4,4,4], # 4 bits
+    [3,3,4,4,4,4,4,4,4,4,4,4,4,4,4,4], # 4 bits
 ]
 read_val_table = [
-    +0,+0,+0,+0,+0,+0,+0,+0,+0,+0,+0,+0,+0,+0,+0,+0,
-    +0,+0,+1,-1,+0,+0,+0,+0,+0,+0,+0,+0,+0,+0,+0,+0,
-    +0,+0,+1,+1,-1,-1,+2,-2,+0,+0,+0,+0,+0,+0,+0,+0,
-    +0,+0,+1,-1,+2,-2,+3,-3,+0,+0,+0,+0,+0,+0,+0,+0,
-    +0,+0,+1,+1,-1,-1,+2,+2,-2,-2,+3,+3,-3,-3,+4,-4,
-    +0,+0,+1,+1,-1,-1,+2,+2,-2,-2,+3,-3,+4,-4,+5,-5,
-    +0,+0,+1,+1,-1,-1,+2,-2,+3,-3,+4,-4,+5,-5,+6,-6,
-    +0,+0,+1,-1,+2,-2,+3,-3,+4,-4,+5,-5,+6,-6,+7,-7,
+    [+0,+0,+0,+0,+0,+0,+0,+0,+0,+0,+0,+0,+0,+0,+0,+0],
+    [+0,+0,+1,-1,+0,+0,+0,+0,+0,+0,+0,+0,+0,+0,+0,+0],
+    [+0,+0,+1,+1,-1,-1,+2,-2,+0,+0,+0,+0,+0,+0,+0,+0],
+    [+0,+0,+1,-1,+2,-2,+3,-3,+0,+0,+0,+0,+0,+0,+0,+0],
+    [+0,+0,+1,+1,-1,-1,+2,+2,-2,-2,+3,+3,-3,-3,+4,-4],
+    [+0,+0,+1,+1,-1,-1,+2,+2,-2,-2,+3,-3,+4,-4,+5,-5],
+    [+0,+0,+1,+1,-1,-1,+2,-2,+3,-3,+4,-4,+5,-5,+6,-6],
+    [+0,+0,+1,-1,+2,-2,+3,-3,+4,-4,+5,-5,+6,-6,+7,-7],
 ]
 scale_conversion_table_hex = [[
     b"\x00\x00\x00\x00",b"\x00\x00\x00\x00",b"\x32\xA0\xB0\x51",b"\x32\xD6\x1B\x5E",b"\x33\x0E\xA4\x3A",b"\x33\x3E\x0F\x68",b"\x33\x7D\x3E\x0C",b"\x33\xA8\xB6\xD5",
@@ -238,11 +238,10 @@ imdct_window = [
 ]
 imdct_window = np.array([[byteFloat(y) for y in x] for x in imdct_window])
 
-def checkSum(f, cnt: int):
-    temp = f.peek(cnt)
+def checkSum(temp: bytes):
     sums = 0
-    for i in range(cnt):
-        sums = ((sums << 8) ^ CRC16Table[(sums >> 8) ^ temp[i]]) & 0xffff
+    for c in temp:
+        sums = ((sums << 8) ^ CRC16Table[(sums >> 8) ^ c]) & 0xffff
     return sums
 
 class BitReader:
@@ -252,7 +251,7 @@ class BitReader:
         self.byte_position = 0
         self.bit_buffer = 0
         self.bit_count = 0
-        self.masks = [0, 1, 3, 7, 15, 31, 63, 127]
+        self.masks = [0, 1, 3, 7, 15, 31, 63, 127, 255, 511, 1023, 2047, 4095, 8191, 16383, 32767]
 
     def getBit(self, bit_size: int):
         """Fill buffer with at least bit_size bits"""
@@ -275,6 +274,28 @@ class BitReader:
         self.bit_count -= bit_size
         return result
 
+    def peekBit(self, bit_size: int):
+        """Fill buffer with at least bit_size bits"""
+        if self.bit_count < bit_size:
+            self.bit_buffer = (self.bit_buffer << 8) | self.data[self.byte_position]
+            self.bit_count += 8
+            self.byte_position += 1
+        if self.bit_count < bit_size:
+            self.bit_buffer = (self.bit_buffer << 8) | self.data[self.byte_position]
+            self.bit_count += 8
+            self.byte_position += 1
+        """ Get bits """
+        return self.bit_buffer >> (self.bit_count - bit_size)
+    
+    def skipBit(self, bit_size: int):
+        shift = self.bit_count - bit_size
+        if shift:
+            self.bit_buffer &= self.masks[shift]
+            self.bit_count -= bit_size
+        else:
+            self.bit_buffer = 0
+            self.bit_count = 0
+
     def rewind(self, bit_size: int):
         if bit_size == 0:
             return
@@ -282,6 +303,13 @@ class BitReader:
         self.byte_position -= total_bits // 8
         self.bit_count = total_bits % 8
         self.bit_buffer = (self.data[self.byte_position - 1] & self.masks[self.bit_count]) if self.bit_count else 0
+
+def temp_filename():
+    import tempfile
+    with tempfile.NamedTemporaryFile(delete=False) as temp_file:
+        temp_file_path = temp_file.name
+        temp_file.close()
+    return temp_file_path
 
 def hca_decode(data, cipher=None, subkey=None, compile=True):
     import platform
@@ -312,17 +340,19 @@ def hca_decode(data, cipher=None, subkey=None, compile=True):
                 except:
                     pass
         if check_exists(decoder):
-            from random import randrange
-            nonce1 = randrange(10 ** 24)
-            fname1 = rpath + "hca_src/{}.wav".format(nonce1)
-            nonce2 = randrange(10 ** 24)
-            fname2 = rpath + "hca_src/{}.hca".format(nonce2)
+            fname1 = temp_filename()
+            fname2 = temp_filename()
             with open(fname2, "wb") as f:
                 f.write(data)
                 f.flush()
             try:
                 decoderabs = rpath + 'HCADecoder'
-                subprocess.check_output([decoderabs, fname2, '-k', "{:016x}".format(cipher), '-s', str(subkey), '-o', fname1], cwd=rcwd)
+                arguments = [decoderabs, fname2, '-o', fname1]
+                if cipher is not None:
+                    arguments.extend(['-k', f"{cipher:016x}"])
+                if subkey is not None:
+                    arguments.extend(['-s', str(subkey)])
+                subprocess.check_output(arguments, cwd=rcwd)
             except:
                 import traceback
                 traceback.print_exc()
@@ -361,6 +391,7 @@ def build_cipher_table(_type, cipher=None, subkey=None):
         _ciphertable.append(0xff)
         return tuple(_ciphertable)
     if _type == 56:
+        assert cipher is not None
         if subkey is not None and subkey != 0:
             cipher = (cipher * ((subkey << 16) | (((subkey & 0xFFFF) ^ 0xFFFF) + 2))) & 0xFFFFFFFFFFFFFFFF
         cipher = (cipher - 1) & 0xFFFFFFFFFFFFFFFF
@@ -459,7 +490,9 @@ def hca_parse(data, cipher=None, subkey=None):
         _loop = _loop(0, 0, 0, 0, 0x400, False)
     # CIPH
     _ciph = T("cipher", ("ciph", "type"))
+    _ciph_loc = None
     if int.from_bytes(reader.peek(4), byteorder='big') & hca_mask == 0x63697068:
+        _ciph_loc = reader.tell()
         _ciph = _ciph(*reader.readStruct(">IH"))
     else:
         _ciph = _ciph(0, 0)
@@ -510,7 +543,7 @@ def hca_parse(data, cipher=None, subkey=None):
     start_band = _comp.base_band_count + _comp.stereo_band_count
     coded_count = [_comp.base_band_count + (_comp.stereo_band_count if channel_type[i] != 2 else 0) for i in range(_format.channel_count)]
 
-    return T("HCAFile", ("header", "format", "comp", "vbr", "ath", "loop", "ciph", "rva", "comm", "ciphertable", "athtable", "hfr_group_count", "channels_per_track", "start_band", "coded_count", "channel_type", "random"))(_header, _format, _comp, _vbr, _ath, _loop, _ciph, _rva, _comm, _ciphertable, _athtable, _hfr_group_count, channels_per_track, start_band, coded_count, channel_type, {"state": 1})
+    return T("HCAFile", ("header", "format", "comp", "vbr", "ath", "loop", "ciph", "ciph_loc", "rva", "comm", "ciphertable", "athtable", "hfr_group_count", "channels_per_track", "start_band", "coded_count", "channel_type", "random"))(_header, _format, _comp, _vbr, _ath, _loop, _ciph, _ciph_loc, _rva, _comm, _ciphertable, _athtable, _hfr_group_count, channels_per_track, start_band, coded_count, channel_type, {"state": 1})
 
 def hca_decode_fallback(data, cipher, subkey):
     # file should implement "write", "flush", and "seek"
@@ -545,7 +578,7 @@ def hca_decode_fallback(data, cipher, subkey):
     for l in range(hca_file.format.block_count):
         address = hca_file.header.dataOffset + hca_file.comp.block_size * l
         f.seek(address)
-        if checkSum(f, hca_file.comp.block_size):
+        if checkSum(f.peek(hca_file.comp.block_size)):
             raise ValueError("Checksum not = 0")
         dec_reader = BitReader([hca_file.ciphertable[i] for i in f.read(hca_file.comp.block_size)])
         magic = dec_reader.getBit(16)
@@ -681,20 +714,20 @@ def decode1(data: BitReader, hfr_group_count, packed_noise_level, athTable, chan
 
 def decode2(data: BitReader, spectra, gain, coded_count, resolution):
     # dequantize_coefficients
-    spectra[:] = 0
+    qcs = []
     for i in range(coded_count):
         res = resolution[i]
         bitSize = max_bit_table[res]
-        if res <= 7:
-            code = data.getBit(bitSize) + (res << 4)
-            data.rewind(bitSize - read_bit_table[code])
-            qc = read_val_table[code]
+        code = data.peekBit(bitSize)
+        if res >> 3:
+            qc = (code >> 1) if code & 1 else -(code >> 1)
+            data.skipBit(bitSize if qc else (bitSize - 1))
         else:
-            code = data.getBit(bitSize)
-            qc = (-1 if code & 1 else 1) * (code >> 1)
-            if not qc:
-                data.rewind(1)
-        spectra[i] = gain[i] * qc
+            qc = read_val_table[res][code]
+            data.skipBit(read_bit_table[res][code])
+        qcs.append(qc)
+    spectra[:coded_count] = gain[:coded_count] * qcs
+    spectra[coded_count:] = 0
 
 def decode3a(spectra, channeltype, scale_factors, min_res, noise_count, valid_count, noise, ms_stereo, random):
     # reconstruct_noise

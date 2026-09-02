@@ -30,9 +30,11 @@ COLUMN_TYPE_1BYTE = 0x00
 
 WAVEFORM_ENCODE_TYPE_ADX = 0
 WAVEFORM_ENCODE_TYPE_HCA = 2
+WAVEFORM_ENCODE_TYPE_HCA_ALT = 6
 WAVEFORM_ENCODE_TYPE_VAG = 7
 WAVEFORM_ENCODE_TYPE_ATRAC3 = 8
 WAVEFORM_ENCODE_TYPE_BCWAV = 9
+WAVEFORM_ENCODE_TYPE_ATRAC9 = 11
 WAVEFORM_ENCODE_TYPE_NINTENDO_DSP = 13
 
 
@@ -75,8 +77,10 @@ column_data_stable = {
 wave_type_ftable = {
     WAVEFORM_ENCODE_TYPE_ADX: ".adx",
     WAVEFORM_ENCODE_TYPE_HCA: ".hca",
+    WAVEFORM_ENCODE_TYPE_HCA_ALT: ".hca",
     WAVEFORM_ENCODE_TYPE_VAG: ".vag",
     WAVEFORM_ENCODE_TYPE_ATRAC3: ".at3",
+    WAVEFORM_ENCODE_TYPE_ATRAC9: ".at9",
     WAVEFORM_ENCODE_TYPE_BCWAV: ".bcwav",
     WAVEFORM_ENCODE_TYPE_NINTENDO_DSP: ".dsp"}
 
@@ -303,6 +307,8 @@ class TrackList(object):
             if row["ReferenceType"] not in {3, 8}:
                 raise RuntimeError("ReferenceType {0} not implemented.".format(row["ReferenceType"]))
 
+            if row["ReferenceIndex"] >= len(syns.rows):
+                continue
             r_data = syns.rows[row["ReferenceIndex"]]["ReferenceItems"]
             a, b = struct.unpack(">HH", r_data)
 
@@ -480,8 +486,8 @@ class ACBFile(object):
 
 
 def find_awb(path):
-    if path.endswith(".acb"):
-        awb_path = path[:-4] + ".awb"
+    if re.search(r"\.acb$", path):
+        awb_path = re.sub(r"\.acb$", ".awb", path)
         if os.path.exists(awb_path):
             return awb_path
 
