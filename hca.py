@@ -719,7 +719,7 @@ def hca_decode_internal_fallback(
                     )
                 decode5(channel_idx, spectra, wav3, wave_buf)
         wav = wave_buf.reshape((channel_count, -1)).T.ravel()
-        wavfile.writeframes((wav.clip(-1, 1) * 0x7FFF).astype("<i2").tobytes())
+        wavfile.writeframes(((wav * hca_file.rva.volume).clip(-1, 1) * 0x7FFF).astype("<i2").tobytes())
 
 def hca_decode_internal_numba(
     f, hca_file, channel_count, gain, wav3, wave_buf, wavfile
@@ -769,7 +769,7 @@ def hca_decode_internal_numba(
                 decode5(sub, spectra_all[:, sub, :], wav3, wave_buf)
 
         wav = wave_buf.reshape((channel_count, -1)).T.ravel()
-        wavfile.writeframes((wav.clip(-1, 1) * 0x7FFF).astype("<i2").tobytes())
+        wavfile.writeframes(((wav * hca_file.rva.volume).clip(-1, 1) * 0x7FFF).astype("<i2").tobytes())
 
 def decode1(
     data: BitReader,
@@ -779,7 +779,9 @@ def decode1(
     version, max_res, min_res,
     scalelist, valueFloat, scaleFloat
 ):
-    # unpack scalefactors
+    """
+    unpack spectral envelope / scale factors
+    """
     delta_bits = data.getBit(3)
     c_count = coded_count
     # extra_count added in v300
@@ -888,7 +890,9 @@ def decode2(
     spectra, gain, coded_count, resolution,
     max_bit_table, read_bit_table, read_val_table
 ):
-    # dequantize_coefficients
+    """
+    dequantize spectral coefficients
+    """
     for i in range(coded_count):
         res = resolution[i]
         bitSize = max_bit_table[res]
@@ -908,7 +912,9 @@ def decode3a(
     noise_count, valid_count, noise,
     ms_stereo, random, scale_conversion_table
 ):
-    # reconstruct_noise
+    """
+    noise reconstruction
+    """
     if min_res > 0:
         return
     if valid_count <= 0 or noise_count <= 0:
@@ -934,7 +940,9 @@ def decode3b(
     spectra, channeltype, scale_factors,
     version, scale_conversion_table
 ):
-    # reconstruct_high_frequency
+    """
+    high frequency reconstruction
+    """
     if bands_per_hfr_group == 0:
         return
     if channeltype == 2:
@@ -969,6 +977,9 @@ def decode4(
     spectra, nextspectra,
     channeltype, ms_stereo, intensity_ratio_table
 ):
+    """
+    stereo channel coupling
+    """
     # apply_intensity_stereo
     if channeltype == 1: # and stereo_band_count:
         ratio_l = intensity_ratio_table[intensity]
@@ -983,7 +994,9 @@ def decode4(
         nextspectra[base_band_count:total_band_count] = coef_r
 
 def decode5(index, spectra, wav3, wave):
-    # imdct_transform (DCT-IV)
+    """
+    imdct_transform (DCT-IV)
+    """
     spectra = idct(spectra, type=4, norm='ortho', axis=-1).reshape((-1, 2, 0x40))
     wave[:, index, 0] = spectra[:, 1] * imdct_window[0] + wav3[:, 0]
     wave[:, index, 1] = spectra[:, 1, ::-1] * imdct_window[1] - wav3[:, 1]
