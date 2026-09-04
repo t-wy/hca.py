@@ -3,6 +3,7 @@
 import io, os, platform, subprocess, struct, tempfile, traceback, wave, numpy as np
 from scipy.fft import idct
 from collections import namedtuple as T
+from typing import Optional
 
 try:
     import numba
@@ -223,7 +224,7 @@ imdct_window = [
 ]
 imdct_window = np.array([[byteFloat(y) for y in x] for x in imdct_window])
 
-def checkSum(temp: bytes):
+def checkSum(temp: bytes) -> int:
     sums = 0
     for c in temp:
         sums = ((sums << 8) ^ CRC16Table[(sums >> 8) ^ c]) & 0xffff
@@ -305,7 +306,7 @@ def temp_filename():
         temp_file.close()
     return temp_file_path
 
-def hca_decode(data, cipher=None, subkey=None, compile=True, use_numba=True):
+def try_compile_cpp():
     is_windows = platform.system() == 'Windows'
     def check_exists(path):
         try:
@@ -313,68 +314,73 @@ def hca_decode(data, cipher=None, subkey=None, compile=True, use_numba=True):
             return True
         except Exception as e:
             return False
-    def fallback():
-        if use_numba and _HAVE_NUMBA:
-            try:
-                return hca_decode_fallback(data, cipher, subkey, numba = True)
-            except:
-                import traceback
-                traceback.print_exc()
-                raise
-                pass
-        return hca_decode_fallback(data, cipher, subkey, numba = False)
     rpath = os.path.dirname(__file__) + "/"
     rcwd = rpath
     if rpath == "/":
         rpath = ""
         rcwd = None
-    if compile and os.path.exists(rpath + "hca_src"):
+    if os.path.exists(rpath + "hca_src"):
         decoder = ("" if is_windows else "./") + 'HCADecoder'
+        ext = ".exe" if is_windows else ""
         # find executable
-        if not check_exists(decoder):
+        last_src_modified_time = max(
+            os.path.getmtime(rpath + "hca_src/HCADecoder.cpp"),
+            os.path.getmtime(rpath + "hca_src/clHCA.cpp"),
+            os.path.getmtime(rpath + "hca_src/clHCA.h"),
+        )
+        if (
+            not check_exists(decoder) or (
+                os.path.getmtime(rpath + "HCADecoder" + ext) <
+                last_src_modified_time
+            )
+        ):
+            if os.path.isfile(rpath + "HCADecoder" + ext):
+                os.unlink(rpath + "HCADecoder" + ext)
             if check_exists("g++"):
                 # compile
                 try:
                     subprocess.check_output(['g++', '-w', '-o', '../HCADecoder', 'clHCA.cpp', 'HCADecoder.cpp'], cwd=rpath + "hca_src")
                 except:
-                    pass
+                    return False, None
         if check_exists(decoder):
-            fname1 = temp_filename()
-            fname2 = temp_filename()
-            with open(fname2, "wb") as f:
-                f.write(data)
-                f.flush()
+            return True, (rpath, rcwd)
+    return False, None
+
+def hca_decode(
+    data: bytes,
+    cipher: Optional[int] = None, subkey: Optional[int] = None,
+    compile: bool = True, use_numba: bool = True
+):
+    if compile:
+        compile_result, path = try_compile_cpp()
+        if compile_result:
             try:
-                decoderabs = rpath + 'HCADecoder'
-                arguments = [decoderabs, fname2, '-o', fname1]
-                if cipher is not None:
-                    arguments.extend(['-k', f"{cipher:016x}"])
-                if subkey is not None:
-                    arguments.extend(['-s', str(subkey)])
-                subprocess.check_output(arguments, cwd=rcwd)
+                rpath, rcwd = path
+                return hca_decode_internal_cpp(data, cipher, subkey, rpath, rcwd)
             except:
                 traceback.print_exc()
-            os.remove(fname2)
-            if os.path.exists(fname1):
-                with open(fname1, "rb") as f:
-                    arr = io.BytesIO(f.read())
-                arr.seek(0)
-                os.remove(fname1)
-                return arr
-            else:
-                return fallback()
-        else:
-            return fallback()
-    else:
-        return fallback()
+    if use_numba and _HAVE_NUMBA:
+        try:
+            return hca_decode_fallback(data, cipher, subkey, numba = True)
+        except:
+            traceback.print_exc()
+    return hca_decode_fallback(data, cipher, subkey, numba = False)
 
-def build_ath_table(_type, sampling_rate):
+def build_ath_table(_type: int, sampling_rate: int):
     if _type == 0:
         return tuple([0] * 0x80)
     else:
-        return tuple((0xff if index >= 0x28e else athList[index]) for i in range(0x80) for index in [(sampling_rate * i) >> 13])
+        return tuple(
+            (0xff if index >= 0x28e else athList[index])
+            for i in range(0x80)
+            for index in [(sampling_rate * i) >> 13]
+        )
 
-def build_cipher_table(_type, cipher=None, subkey=None):
+def build_cipher_table(
+    _type: int,
+    cipher: Optional[int] = None,
+    subkey: Optional[int] = None
+):
     if _type == 0:
         return tuple(range(256))
     if _type == 1: # encrypted
@@ -420,6 +426,7 @@ def build_cipher_table(_type, cipher=None, subkey=None):
             high_mask = high[i] << 4
             for j in range(16):
                 t3.append(high_mask | low[j])
+	    # 17 is coprime to 256 so every number would be unique and visited exactly once
         _ciphertable = [0]
         v = 17
         for i in range(254):
@@ -435,28 +442,38 @@ def hca_parse(data, cipher=None, subkey=None):
     reader = r(data)
     hca_mask = 0x7f7f7f7f # not 0xffffffff as chunks' magic may be obfuscated when encrypted with key
     # HCA
-    _header = T("header", ("hca", "version", "dataOffset"))(*reader.readStruct(">IHH"))
+    _header = T("header", ("hca", "version", "dataOffset"))(
+        *reader.readStruct(">IHH")
+    )
     if _header.hca & hca_mask != 0x48434100:
         raise ValueError("Incorrect Header")
     # FMT
-    _format = T("format", ("fmt", "channel_count", *c("sampling_rate", 3),
-                           "block_count", "mute_header", "mute_footer"))(*reader.readStruct(">IB3BIHH"))
+    _format = T(
+        "format", ("fmt", "channel_count", *c("sampling_rate", 3),
+        "block_count", "mute_header", "mute_footer")
+    )(*reader.readStruct(">IB3BIHH"))
     _format = combineBytes(_format, "sampling_rate", 3)
     if _format.fmt & hca_mask != 0x666D7400:
         raise ValueError("Incorrect Format")
     tmp = int.from_bytes(reader.peek(4), byteorder='big')
     if tmp & hca_mask == 0x636F6D70:
         # COMP
-        _comp = T("compress", ("comp", "block_size", "min_resolution", "max_resolution", "trackCount", "channel_config", "total_band_count", "base_band_count", "stereo_band_count", "bands_per_hfr_group", "ms_stereo", "reserved"))(*reader.readStruct(">IH10B"))
+        _comp = T(
+            "compress", ("comp", "block_size", "min_resolution", "max_resolution", "trackCount", "channel_config", "total_band_count", "base_band_count", "stereo_band_count", "bands_per_hfr_group", "ms_stereo", "reserved")
+        )(*reader.readStruct(">IH10B"))
     elif tmp & hca_mask == 0x64656300:
         # DEC
-        _dec = T("decode", ("dec", "block_size", "min_resolution", "max_resolution", "total_band_count", "base_band_count", "temp", "stereoType"))(*reader.readStruct(">IH6B"))
+        _dec = T(
+            "decode", ("dec", "block_size", "min_resolution", "max_resolution", "total_band_count", "base_band_count", "temp", "stereoType")
+        )(*reader.readStruct(">IH6B"))
         _dec.total_band_count += 1
         _dec.base_band_count += 1
         if _dec.stereoType == 0:
             _dec.base_band_count = _dec.total_band_count
         _stereo_band_count = _dec.total_band_count - _dec.base_band_count
-        _comp = T("compress", ("comp", "block_size", "min_resolution", "max_resolution", "trackCount", "channel_config", "total_band_count", "base_band_count", "stereo_band_count", "bands_per_hfr_group", "ms_stereo", "reserved"))(_dec.dec, _dec.block_size, _dec.min_resolution, _dec.max_resolution, _dec.temp >> 4, _dec.temp & 0xf, _dec.total_band_count, _dec.base_band_count, _stereo_band_count, 0, 0, 0)
+        _comp = T(
+            "compress", ("comp", "block_size", "min_resolution", "max_resolution", "trackCount", "channel_config", "total_band_count", "base_band_count", "stereo_band_count", "bands_per_hfr_group", "ms_stereo", "reserved")
+        )(_dec.dec, _dec.block_size, _dec.min_resolution, _dec.max_resolution, _dec.temp >> 4, _dec.temp & 0xf, _dec.total_band_count, _dec.base_band_count, _stereo_band_count, 0, 0, 0)
     else:
         raise ValueError("Neither Compress nor Decode")
     if _comp.trackCount == 0:
@@ -512,7 +529,9 @@ def hca_parse(data, cipher=None, subkey=None):
     _ciphertable = build_cipher_table(_ciph.type, cipher, subkey)
     _athtable = build_ath_table(_ath.type, _format.sampling_rate)
     ceil2 = lambda a, b: (a // b + bool(a % b)) if b > 0 else 0
-    _hfr_group_count = ceil2(_comp.total_band_count - (_comp.base_band_count + _comp.stereo_band_count), _comp.bands_per_hfr_group)
+    _hfr_group_count = ceil2(
+        _comp.total_band_count - (_comp.base_band_count + _comp.stereo_band_count), _comp.bands_per_hfr_group
+    )
 
     # 0: discrete, 1: primary, 2: secondary
     channels_per_track = _format.channel_count // _comp.trackCount
@@ -538,9 +557,17 @@ def hca_parse(data, cipher=None, subkey=None):
                 channel_type[cursor+4: cursor+8] = [1, 2, 1, 2]
             cursor += channels_per_track
     start_band = _comp.base_band_count + _comp.stereo_band_count
-    coded_count = [_comp.base_band_count + (_comp.stereo_band_count if channel_type[i] != 2 else 0) for i in range(_format.channel_count)]
+    coded_count = [
+        _comp.base_band_count + (
+            _comp.stereo_band_count if channel_type[i] != 2 else 0
+        ) for i in range(_format.channel_count)
+    ]
 
-    return T("HCAFile", ("header", "format", "comp", "vbr", "ath", "loop", "ciph", "ciph_loc", "rva", "comm", "ciphertable", "athtable", "hfr_group_count", "channels_per_track", "start_band", "coded_count", "channel_type"))(_header, _format, _comp, _vbr, _ath, _loop, _ciph, _ciph_loc, _rva, _comm, _ciphertable, _athtable, _hfr_group_count, channels_per_track, start_band, coded_count, channel_type)
+    return T("HCAFile", (
+        "header", "format", "comp", "vbr", "ath", "loop", "ciph", "ciph_loc", "rva", "comm", "ciphertable", "athtable", "hfr_group_count", "channels_per_track", "start_band", "coded_count", "channel_type"
+    ))(
+        _header, _format, _comp, _vbr, _ath, _loop, _ciph, _ciph_loc, _rva, _comm, _ciphertable, _athtable, _hfr_group_count, channels_per_track, start_band, coded_count, channel_type
+    )
 
 if _HAVE_NUMBA:
     # converting all those lists to array
@@ -622,7 +649,11 @@ else:
     def decode_block_core(*_, **__):
         pass
 
-def hca_decode_fallback(data, cipher, subkey, numba: bool = True):
+def hca_decode_fallback(
+    data: bytes,
+    cipher: Optional[int] = None, subkey: Optional[int] = None,
+    numba: bool = True
+):
     # file should implement "write", "flush", and "seek"
     hca_file = hca_parse(data, cipher, subkey)
     channel_count = hca_file.format.channel_count
@@ -770,6 +801,22 @@ def hca_decode_internal_numba(
 
         wav = wave_buf.reshape((channel_count, -1)).T.ravel()
         wavfile.writeframes(((wav * hca_file.rva.volume).clip(-1, 1) * 0x7FFF).astype("<i2").tobytes())
+
+def hca_decode_internal_cpp(
+    data: bytes,
+    cipher: Optional[int], subkey: Optional[int],
+    rpath: str, rcwd: str
+):
+    assert len(data) # otherwise stdin waits infinitely
+    # test on stdin to stdout
+    decoderabs = rpath + 'HCADecoder'
+    arguments = [decoderabs]
+    if cipher is not None:
+        arguments.extend(['-k', f"{cipher:016x}"])
+    if subkey is not None:
+        arguments.extend(['-s', str(subkey)])
+    output = subprocess.check_output(arguments, input=data, cwd=rcwd, stderr=subprocess.DEVNULL)
+    return io.BytesIO(output)
 
 def decode1(
     data: BitReader,

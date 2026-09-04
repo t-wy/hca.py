@@ -11,12 +11,8 @@
 #endif
 #ifndef fopen_s
 	errno_t fopen_s(FILE** pFile, const char *filename, const char *mode) {
-		try {
-			*pFile = fopen(filename, mode);
-			return 0;
-		} catch (...) {
-			return 1;
-		}
+		*pFile = fopen(filename, mode);
+		return (*pFile) ? 0 : 1;
 	};
 #endif
 
@@ -48,7 +44,7 @@ bool clHCA::CheckFile(void* data, unsigned int size) {
 //--------------------------------------------------
 // チェックサム
 //--------------------------------------------------
-unsigned short clHCA::CheckSum(void* data, int size, unsigned short sum) {
+unsigned short clHCA::CheckSum(void* data, size_t size, unsigned short sum) {
 	static unsigned short v[] = {
 		0x0000,0x8005,0x800F,0x000A,0x801B,0x001E,0x0014,0x8011,0x8033,0x0036,0x003C,0x8039,0x0028,0x802D,0x8027,0x0022,
 		0x8063,0x0066,0x006C,0x8069,0x0078,0x807D,0x8077,0x0072,0x0050,0x8055,0x805F,0x005A,0x804B,0x004E,0x0044,0x8041,
@@ -71,6 +67,18 @@ unsigned short clHCA::CheckSum(void* data, int size, unsigned short sum) {
 	return sum;
 }
 
+static inline bool HasRoom(const unsigned char* s, const unsigned char* end, size_t need) {
+	return (size_t)(end - s) >= need;
+}
+
+bool clHCA::ValidateBandCounts(unsigned int total, unsigned int base, unsigned int stereo) {
+	// stChannel arrays are fixed at 0x80 entries.
+	if (total > 0x80) return false;
+	if (base > total) return false;
+	if (stereo > total - base) return false;
+	return true;
+}
+
 //--------------------------------------------------
 // ヘッダ情報をコンソール出力
 //--------------------------------------------------
@@ -81,55 +89,72 @@ bool clHCA::PrintInfo(const char* filenameHCA) {
 
 	// HCAファイルを開く
 	FILE* fp;
-	if (fopen_s(&fp, filenameHCA, "rb")) {
-		printf("Error: ファイルが開けませんでした。\n");
-		return false;
+	if (strlen(filenameHCA)) {
+		if (fopen_s(&fp, filenameHCA, "rb")) {
+			fprintf(stderr, "Error: ファイルが開けませんでした。\n");
+			return false;
+		}
+	} else {
+		fp = stdin;
 	}
 
 	// ヘッダチェック
 	stHeader header;
 	memset(&header, 0, sizeof(header));
-	fread(&header, sizeof(header), 1, fp);
+	if (fread(&header, sizeof(header), 1, fp) != 1) return false;
 	if (!CheckFile(&header, sizeof(header))) {
-		printf("Error: HCAファイルではありません。\n");
+		fprintf(stderr, "Error: HCAファイルではありません。\n");
 		fclose(fp); return false;
 	}
 
 	// ヘッダ解析
+	stHeader headerBE = header; // keep the header before bswap
 	header.dataOffset = bswap(header.dataOffset);
 	unsigned char* data = new unsigned char[header.dataOffset];
 	if (!data) {
-		printf("Error: メモリ不足です。\n");
+		fprintf(stderr, "Error: メモリ不足です。\n");
 		fclose(fp); return false;
 	}
-	fseek(fp, 0, SEEK_SET);
-	fread(data, header.dataOffset, 1, fp);
+	// fseek(fp, 0, SEEK_SET);
+	// if (fread(data, header.dataOffset, 1, fp) != 1) {
+	// 	fclose(fp); return false;
+	// };
+	memcpy(data, &headerBE, sizeof(stHeader)); // reuse bytes already read
+	if (fread(data + sizeof(stHeader), header.dataOffset - sizeof(stHeader), 1, fp) != 1) {
+		delete[] data;
+		fclose(fp); return false;
+	}
 
 	unsigned char* s = (unsigned char*)data;
 	unsigned int size = header.dataOffset;
+	unsigned char* dataEnd = s + size;
 
 	// サイズチェック
 	if (size < sizeof(stHeader)) {
-		printf("Error: ヘッダのサイズが小さすぎます。\n");
+		fprintf(stderr, "Error: ヘッダのサイズが小さすぎます。\n");
 		delete[] data; fclose(fp); return false;
 	}
 
 	// HCA
+	if (!HasRoom(s, dataEnd, sizeof(unsigned int))) return false;
 	if ((*(unsigned int*)s & 0x7F7F7F7F) == 0x00414348) {
+		if (!HasRoom(s, dataEnd, sizeof(stHeader))) return false;
 		stHeader* hca = (stHeader*)s; s += sizeof(stHeader);
 		_version = bswap(hca->version);
 		_dataOffset = bswap(hca->dataOffset);
-		printf("コーデック: HCA\n");
-		printf("バージョン: %d.%d\n", _version >> 8, _version & 0xFF);
+		fprintf(stderr, "コーデック: HCA\n");
+		fprintf(stderr, "バージョン: %d.%d\n", _version >> 8, _version & 0xFF);
 		//if(size<_dataOffset)return false;
-		if (CheckSum(hca, _dataOffset))printf("※ ヘッダが破損しています。改変してる場合もこの警告が出ます。\n");
+		if (CheckSum(hca, _dataOffset))fprintf(stderr, "※ ヘッダが破損しています。改変してる場合もこの警告が出ます。\n");
 	}
 	else {
-		printf("※ HCAチャンクがありません。再生に必要な情報です。\n");
+		fprintf(stderr, "※ HCAチャンクがありません。再生に必要な情報です。\n");
 	}
 
 	// fmt
+	if (!HasRoom(s, dataEnd, sizeof(unsigned int))) return false;
 	if ((*(unsigned int*)s & 0x7F7F7F7F) == 0x00746D66) {
+		if (!HasRoom(s, dataEnd, sizeof(stFormat))) return false;
 		stFormat* fmt = (stFormat*)s; s += sizeof(stFormat);
 		_channelCount = fmt->channelCount;
 		_samplingRate = bswap(fmt->samplingRate << 8);
@@ -137,27 +162,29 @@ bool clHCA::PrintInfo(const char* filenameHCA) {
 		_muteHeader = bswap(fmt->muteHeader);
 		_muteFooter = bswap(fmt->muteFooter);
 		switch (_channelCount) {
-		case 1:printf("チャンネル数: モノラル (1チャンネル)\n"); break;
-		case 2:printf("チャンネル数: ステレオ (2チャンネル)\n"); break;
-		default:printf("チャンネル数: %dチャンネル\n", _channelCount); break;
+		case 1:fprintf(stderr, "チャンネル数: モノラル (1チャンネル)\n"); break;
+		case 2:fprintf(stderr, "チャンネル数: ステレオ (2チャンネル)\n"); break;
+		default:fprintf(stderr, "チャンネル数: %dチャンネル\n", _channelCount); break;
 		}
 		if (!(_channelCount >= 1 && _channelCount <= 16)) {
-			printf("※ チャンネル数の範囲は1～16です。\n");
+			fprintf(stderr, "※ チャンネル数の範囲は1～16です。\n");
 		}
-		printf("サンプリングレート: %dHz\n", _samplingRate);
+		fprintf(stderr, "サンプリングレート: %dHz\n", _samplingRate);
 		if (!(_samplingRate >= 1 && _samplingRate <= 0x7FFFFF)) {
-			printf("※ サンプリングレートの範囲は1～8388607(0x7FFFFF)です。\n");
+			fprintf(stderr, "※ サンプリングレートの範囲は1～8388607(0x7FFFFF)です。\n");
 		}
-		printf("ブロック数: %d\n", _blockCount);
-		printf("先頭無音ブロック数: %d\n", (_muteHeader - 0x80) / 0x400);
-		printf("末尾無音サンプル数: %d\n", _muteFooter);
+		fprintf(stderr, "ブロック数: %d\n", _blockCount);
+		fprintf(stderr, "先頭無音ブロック数: %d\n", (_muteHeader - 0x80) / 0x400);
+		fprintf(stderr, "末尾無音サンプル数: %d\n", _muteFooter);
 	}
 	else {
-		printf("※ fmtチャンクがありません。再生に必要な情報です。\n");
+		fprintf(stderr, "※ fmtチャンクがありません。再生に必要な情報です。\n");
 	}
 
 	// comp
+	if (!HasRoom(s, dataEnd, sizeof(unsigned int))) return false;
 	if ((*(unsigned int*)s & 0x7F7F7F7F) == 0x706D6F63) {
+		if (!HasRoom(s, dataEnd, sizeof(stCompress))) return false;
 		stCompress* comp = (stCompress*)s; s += sizeof(stCompress);
 		_blockSize = bswap(comp->blockSize);
 		_comp_r01 = comp->r01;
@@ -169,30 +196,31 @@ bool clHCA::PrintInfo(const char* filenameHCA) {
 		_comp_r07 = comp->r07;
 		_comp_r08 = comp->r08;
 		unsigned int bps = _samplingRate * _blockSize / 128;
-		if (bps < 1000000)printf("ビットレート: %gkbps CBR (固定ビットレート)\n", bps / 1000.0f);
-		else printf("ビットレート: %gMbps CBR (固定ビットレート)\n", bps / 1000000.0f);
-		printf("ブロックサイズ: 0x%X\n", _blockSize);
+		if (bps < 1000000)fprintf(stderr, "ビットレート: %gkbps CBR (固定ビットレート)\n", bps / 1000.0f);
+		else fprintf(stderr, "ビットレート: %gMbps CBR (固定ビットレート)\n", bps / 1000000.0f);
+		fprintf(stderr, "ブロックサイズ: 0x%X\n", _blockSize);
 		if (!(_blockSize >= 8 && _blockSize <= 0xFFFF)) {
-			printf("※ ブロックサイズの範囲は8～65535(0xFFFF)です。v1.3では0でVBRになるようになってましたが、v2.0から廃止されたようです。\n");
+			fprintf(stderr, "※ ブロックサイズの範囲は8～65535(0xFFFF)です。v1.3では0でVBRになるようになってましたが、v2.0から廃止されたようです。\n");
 		}
-		printf("comp1: %d\n", _comp_r01);
-		printf("comp2: %d\n", _comp_r02);
+		fprintf(stderr, "comp1: %d\n", _comp_r01);
+		fprintf(stderr, "comp2: %d\n", _comp_r02);
 		if (!(_comp_r01 >= 0 && _comp_r01 <= _comp_r02 && _comp_r02 <= 0x1F)) {
-			printf("※ comp1とcomp2の範囲は0<=comp1<=comp2<=31です。v2.0現在、comp1は1、comp2は15で固定されています。\n");
+			fprintf(stderr, "※ comp1とcomp2の範囲は0<=comp1<=comp2<=31です。v2.0現在、comp1は1、comp2は15で固定されています。\n");
 		}
-		printf("comp3: %d\n", _comp_r03);
+		fprintf(stderr, "comp3: %d\n", _comp_r03);
 		if (!_comp_r03) {
-			printf("※ comp3は1以上の値です。\n");
+			fprintf(stderr, "※ comp3は1以上の値です。\n");
 		}
-		printf("comp4: %d\n", _comp_r04);
-		printf("comp5: %d\n", _comp_r05);
-		printf("comp6: %d\n", _comp_r06);
-		printf("comp7: %d\n", _comp_r07);
-		printf("comp8: %d\n", _comp_r08);
+		fprintf(stderr, "comp4: %d\n", _comp_r04);
+		fprintf(stderr, "comp5: %d\n", _comp_r05);
+		fprintf(stderr, "comp6: %d\n", _comp_r06);
+		fprintf(stderr, "comp7: %d\n", _comp_r07);
+		fprintf(stderr, "comp8: %d\n", _comp_r08);
 	}
 
 	// dec
 	else if ((*(unsigned int*)s & 0x7F7F7F7F) == 0x00636564) {
+		if (!HasRoom(s, dataEnd, sizeof(stDecode))) return false;
 		stDecode* dec = (stDecode*)s; s += sizeof(stDecode);
 		_blockSize = bswap(dec->blockSize);
 		_comp_r01 = dec->r01;
@@ -204,44 +232,48 @@ bool clHCA::PrintInfo(const char* filenameHCA) {
 		_comp_r07 = _comp_r05 - _comp_r06;
 		_comp_r08 = 0;
 		unsigned int bps = _samplingRate * _blockSize / 128;
-		if (bps < 1000000)printf("ビットレート: %gkbps CBR (固定ビットレート)\n", bps / 1000.0f);
-		else printf("ビットレート: %gMbps CBR (固定ビットレート)\n", bps / 1000000.0f);
-		printf("ブロックサイズ: 0x%X\n", _blockSize);
+		if (bps < 1000000)fprintf(stderr, "ビットレート: %gkbps CBR (固定ビットレート)\n", bps / 1000.0f);
+		else fprintf(stderr, "ビットレート: %gMbps CBR (固定ビットレート)\n", bps / 1000000.0f);
+		fprintf(stderr, "ブロックサイズ: 0x%X\n", _blockSize);
 		if (!(_blockSize >= 8 && _blockSize <= 0xFFFF)) {
-			printf("※ ブロックサイズの範囲は8～65535(0xFFFF)です。v1.3では0でVBRになるようになってましたが、v2.0から廃止されたようです。\n");
+			fprintf(stderr, "※ ブロックサイズの範囲は8～65535(0xFFFF)です。v1.3では0でVBRになるようになってましたが、v2.0から廃止されたようです。\n");
 		}
-		printf("dec1: %d\n", _comp_r01);
-		printf("dec2: %d\n", _comp_r02);
+		fprintf(stderr, "dec1: %d\n", _comp_r01);
+		fprintf(stderr, "dec2: %d\n", _comp_r02);
 		if (!(_comp_r01 >= 0 && _comp_r01 <= _comp_r02 && _comp_r02 <= 0x1F)) {
-			printf("※ dec1とdec2の範囲は0<=dec1<=dec2<=31です。v2.0現在、dec1は1、dec2は15で固定されています。\n");
+			fprintf(stderr, "※ dec1とdec2の範囲は0<=dec1<=dec2<=31です。v2.0現在、dec1は1、dec2は15で固定されています。\n");
 		}
-		printf("dec3: %d\n", _comp_r03);
+		fprintf(stderr, "dec3: %d\n", _comp_r03);
 		if (!_comp_r03) {
-			printf("※ dec3は再生時に1以上の値に修正されます。\n");
+			fprintf(stderr, "※ dec3は再生時に1以上の値に修正されます。\n");
 		}
-		printf("dec4: %d\n", _comp_r04);
-		printf("dec5: %d\n", _comp_r05);
-		printf("dec6: %d\n", _comp_r06);
-		printf("dec7: %d\n", _comp_r07);
+		fprintf(stderr, "dec4: %d\n", _comp_r04);
+		fprintf(stderr, "dec5: %d\n", _comp_r05);
+		fprintf(stderr, "dec6: %d\n", _comp_r06);
+		fprintf(stderr, "dec7: %d\n", _comp_r07);
 	}
 	else {
-		printf("※ compチャンクまたはdecチャンクがありません。再生に必要な情報です。\n");
+		fprintf(stderr, "※ compチャンクまたはdecチャンクがありません。再生に必要な情報です。\n");
 	}
 
+	if (!ValidateBandCounts(_comp_r05, _comp_r06, _comp_r07)) return false;
+
 	// vbr
+	if (!HasRoom(s, dataEnd, sizeof(unsigned int))) return false;
 	if ((*(unsigned int*)s & 0x7F7F7F7F) == 0x00726276) {
+		if (!HasRoom(s, dataEnd, sizeof(stVBR))) return false;
 		stVBR* vbr = (stVBR*)s; s += sizeof(stVBR);
 		_vbr_r01 = bswap(vbr->r01);
 		_vbr_r02 = bswap(vbr->r02);
-		printf("ビットレート: VBR (可変ビットレート) ※v2.0で廃止されています。\n");
+		fprintf(stderr, "ビットレート: VBR (可変ビットレート) ※v2.0で廃止されています。\n");
 		if (!(_blockSize == 0)) {
-			printf("※ compまたはdecチャンクですでにCBRが指定されています。\n");
+			fprintf(stderr, "※ compまたはdecチャンクですでにCBRが指定されています。\n");
 		}
-		printf("vbr1: %d\n", _vbr_r01);
+		fprintf(stderr, "vbr1: %d\n", _vbr_r01);
 		if (!(_vbr_r01 >= 0 && _vbr_r01 <= 0x1FF)) {
-			printf("※ vbr1の範囲は0～511(0x1FF)です。\n");
+			fprintf(stderr, "※ vbr1の範囲は0～511(0x1FF)です。\n");
 		}
-		printf("vbr2: %d\n", _vbr_r02);
+		fprintf(stderr, "vbr2: %d\n", _vbr_r02);
 	}
 	else {
 		_vbr_r01 = 0;
@@ -249,66 +281,78 @@ bool clHCA::PrintInfo(const char* filenameHCA) {
 	}
 
 	// ath
+	if (!HasRoom(s, dataEnd, sizeof(unsigned int))) return false;
 	if ((*(unsigned int*)s & 0x7F7F7F7F) == 0x00687461) {
+		if (!HasRoom(s, dataEnd, sizeof(stATH))) return false;
 		stATH* ath = (stATH*)s; s += 6;//s+=sizeof(stATH);
 		_ath_type = ath->type;
-		printf("ATHタイプ:%d ※v2.0から廃止されています。\n", _ath_type);
+		fprintf(stderr, "ATHタイプ:%d ※v2.0から廃止されています。\n", _ath_type);
 	}
 	else {
 		if (_version < 0x200) {
-			printf("ATHタイプ:1 ※v2.0から廃止されています。\n");
+			fprintf(stderr, "ATHタイプ:1 ※v2.0から廃止されています。\n");
 		}
 	}
 
 	// loop
+	if (!HasRoom(s, dataEnd, sizeof(unsigned int))) return false;
 	if ((*(unsigned int*)s & 0x7F7F7F7F) == 0x706F6F6C) {
+		if (!HasRoom(s, dataEnd, sizeof(stLoop))) return false;
 		stLoop* loop = (stLoop*)s; s += sizeof(stLoop);
 		_loopStart = bswap(loop->start);
 		_loopEnd = bswap(loop->end);
 		_loopCount = bswap(loop->count);
 		_loop_r01 = bswap(loop->r01);
-		printf("ループ開始ブロック: %d\n", _loopStart);
-		printf("ループ終了ブロック: %d\n", _loopEnd);
+		fprintf(stderr, "ループ開始ブロック: %d\n", _loopStart);
+		fprintf(stderr, "ループ終了ブロック: %d\n", _loopEnd);
 		if (!(_loopStart >= 0 && _loopStart <= _loopEnd && _loopEnd < _blockCount)) {
-			printf("※ ループ開始ブロックとループ終了ブロックの範囲は、0<=ループ開始ブロック<=ループ終了ブロック<ブロック数 です。\n");
+			fprintf(stderr, "※ ループ開始ブロックとループ終了ブロックの範囲は、0<=ループ開始ブロック<=ループ終了ブロック<ブロック数 です。\n");
 		}
 		if (_loopCount == 0x80) {
-			printf("ループ回数: 無限ループ\n");
+			fprintf(stderr, "ループ回数: 無限ループ\n");
 		}
 		else {
-			printf("ループ回数: %d回\n", _loopCount);
+			fprintf(stderr, "ループ回数: %d回\n", _loopCount);
 		}
-		printf("ループ情報1: %d\n", _loop_r01);
+		fprintf(stderr, "ループ情報1: %d\n", _loop_r01);
 	}
 
 	// ciph
+	if (!HasRoom(s, dataEnd, sizeof(unsigned int))) return false;
 	if ((*(unsigned int*)s & 0x7F7F7F7F) == 0x68706963) {
+		if (!HasRoom(s, dataEnd, sizeof(stCipher))) return false;
 		stCipher* ciph = (stCipher*)s; s += 6;//s+=sizeof(stCipher);
 		_ciph_type = bswap(ciph->type);
 		switch (_ciph_type) {
-		case 0:printf("暗号化タイプ: なし\n"); break;
-		case 1:printf("暗号化タイプ: 鍵無し暗号化\n"); break;
-		case 0x38:printf("暗号化タイプ: 鍵有り暗号化 ※正しい鍵を使わないと出力波形がおかしくなります。\n"); break;
-		default:printf("暗号化タイプ: %d\n", _ciph_type); break;
+		case 0:fprintf(stderr, "暗号化タイプ: なし\n"); break;
+		case 1:fprintf(stderr, "暗号化タイプ: 鍵無し暗号化\n"); break;
+		case 0x38:fprintf(stderr, "暗号化タイプ: 鍵有り暗号化 ※正しい鍵を使わないと出力波形がおかしくなります。\n"); break;
+		default:fprintf(stderr, "暗号化タイプ: %d\n", _ciph_type); break;
 		}
 		if (!(_ciph_type == 0 || _ciph_type == 1 || _ciph_type == 0x38)) {
-			printf("※ この暗号化タイプは、v2.0現在再生できません。\n");
+			fprintf(stderr, "※ この暗号化タイプは、v2.0現在再生できません。\n");
 		}
 	}
 
 	// rva
+	if (!HasRoom(s, dataEnd, sizeof(unsigned int))) return false;
 	if ((*(unsigned int*)s & 0x7F7F7F7F) == 0x00617672) {
+		if (!HasRoom(s, dataEnd, sizeof(stRVA))) return false;
 		stRVA* rva = (stRVA*)s; s += sizeof(stRVA);
 		_rva_volume = bswap(rva->volume);
-		printf("相対ボリューム調節: %g倍\n", _rva_volume);
+		fprintf(stderr, "相対ボリューム調節: %g倍\n", _rva_volume);
 	}
 
 	// comm
+	if (!HasRoom(s, dataEnd, sizeof(unsigned int))) return false;
 	if ((*(unsigned int*)s & 0x7F7F7F7F) == 0x6D6D6F63) {
+		if (!HasRoom(s, dataEnd, sizeof(stComment))) return false;
 		stComment* comm = (stComment*)s; s += 5;//s+=sizeof(stComment);
 		_comm_len = comm->len;
-		_comm_comment = (char*)s;
-		printf("コメント: %s\n", _comm_comment);
+		// _comm_comment = (char*)s;
+		unsigned char* nul = (unsigned char*)memchr(s, '\0', dataEnd - s);
+		_comm_comment = nul ? (char*)s : nullptr; // no over-reading an unterminated comment
+		fprintf(stderr, "コメント: %s\n", _comm_comment);
 	}
 
 	delete[] data;
@@ -329,12 +373,16 @@ bool clHCA::Decrypt(const char* filenameHCA) {
 
 	// HCAファイルを開く
 	FILE* fp;
+	if (!strlen(filenameHCA)) {
+		fprintf(stderr, "Error: Decrypt does not support stdin\n");
+		return false;
+	}; // no decrypt on stdin
 	if (fopen_s(&fp, filenameHCA, "r+b"))return false;
 
 	// ヘッダチェック
 	stHeader header;
 	memset(&header, 0, sizeof(header));
-	fread(&header, sizeof(header), 1, fp);
+	if (fread(&header, sizeof(header), 1, fp) != 1) return false;
 	if (!CheckFile(&header, sizeof(header))) { fclose(fp); return false; }
 
 	// ヘッダ解析
@@ -342,16 +390,19 @@ bool clHCA::Decrypt(const char* filenameHCA) {
 	unsigned char* data = new unsigned char[header.dataOffset];
 	if (!data) { fclose(fp); return false; }
 	fseek(fp, 0, SEEK_SET);
-	fread(data, header.dataOffset, 1, fp);
+	if (fread(data, header.dataOffset, 1, fp) != 1) return false;
 
 	unsigned char* s = (unsigned char*)data;
 	unsigned int size = header.dataOffset;
+	unsigned char* dataEnd = s + size;
 
 	// サイズチェック
 	if (size < sizeof(stHeader)) { delete[] data; fclose(fp); return false; }
 
 	// HCA
+	if (!HasRoom(s, dataEnd, sizeof(unsigned int))) return false;
 	if ((*(unsigned int*)s & 0x7F7F7F7F) == 0x00414348) {
+		if (!HasRoom(s, dataEnd, sizeof(stHeader))) return false;
 		stHeader* hca = (stHeader*)s; s += sizeof(stHeader);
 		hca->hca &= 0x7F7F7F7F;
 		_version = bswap(hca->version);
@@ -362,7 +413,9 @@ bool clHCA::Decrypt(const char* filenameHCA) {
 	}
 
 	// fmt
+	if (!HasRoom(s, dataEnd, sizeof(unsigned int))) return false;
 	if ((*(unsigned int*)s & 0x7F7F7F7F) == 0x00746D66) {
+		if (!HasRoom(s, dataEnd, sizeof(stFormat))) return false;
 		stFormat* fmt = (stFormat*)s; s += sizeof(stFormat);
 		fmt->fmt &= 0x7F7F7F7F;
 		_samplingRate = bswap(fmt->samplingRate << 8);
@@ -373,30 +426,51 @@ bool clHCA::Decrypt(const char* filenameHCA) {
 	}
 
 	// comp
+	if (!HasRoom(s, dataEnd, sizeof(unsigned int))) return false;
 	if ((*(unsigned int*)s & 0x7F7F7F7F) == 0x706D6F63) {
+		if (!HasRoom(s, dataEnd, sizeof(stCompress))) return false;
 		stCompress* comp = (stCompress*)s; s += sizeof(stCompress);
 		comp->comp &= 0x7F7F7F7F;
 		_blockSize = bswap(comp->blockSize);
+		_comp_r05 = comp->r05;
+		_comp_r06 = comp->r06;
+		_comp_r07 = comp->r07;
+		if (!((_blockSize >= 8 && _blockSize <= 0xFFFF) || (_blockSize == 0))) {
+			delete[] data; fclose(fp); return false;
+		};
 	}
 
 	// dec
 	else if ((*(unsigned int*)s & 0x7F7F7F7F) == 0x00636564) {
+		if (!HasRoom(s, dataEnd, sizeof(stDecode))) return false;
 		stDecode* dec = (stDecode*)s; s += sizeof(stDecode);
 		dec->dec &= 0x7F7F7F7F;
 		_blockSize = bswap(dec->blockSize);
+		_comp_r05 = dec->count1 + 1;
+		_comp_r06 = ((dec->enableCount2) ? dec->count2 : dec->count1) + 1;
+		_comp_r07 = _comp_r05 - _comp_r06;
+		if (!((_blockSize >= 8 && _blockSize <= 0xFFFF) || (_blockSize == 0))) {
+			delete[] data; fclose(fp); return false;
+		};
 	}
 	else {
 		delete[] data; fclose(fp); return false;
 	}
 
+	if (!ValidateBandCounts(_comp_r05, _comp_r06, _comp_r07)) return false;
+
 	// vbr
+	if (!HasRoom(s, dataEnd, sizeof(unsigned int))) return false;
 	if ((*(unsigned int*)s & 0x7F7F7F7F) == 0x00726276) {
+		if (!HasRoom(s, dataEnd, sizeof(stVBR))) return false;
 		stVBR* vbr = (stVBR*)s; s += sizeof(stVBR);
 		vbr->vbr &= 0x7F7F7F7F;
 	}
 
 	// ath
+	if (!HasRoom(s, dataEnd, sizeof(unsigned int))) return false;
 	if ((*(unsigned int*)s & 0x7F7F7F7F) == 0x00687461) {
+		if (!HasRoom(s, dataEnd, sizeof(stATH))) return false;
 		stATH* ath = (stATH*)s; s += 6;//s+=sizeof(stATH);
 		ath->ath &= 0x7F7F7F7F;
 		_ath_type = bswap(ath->type);
@@ -407,13 +481,17 @@ bool clHCA::Decrypt(const char* filenameHCA) {
 	}
 
 	// loop
+	if (!HasRoom(s, dataEnd, sizeof(unsigned int))) return false;
 	if ((*(unsigned int*)s & 0x7F7F7F7F) == 0x706F6F6C) {
+		if (!HasRoom(s, dataEnd, sizeof(stLoop))) return false;
 		stLoop* loop = (stLoop*)s; s += sizeof(stLoop);
 		loop->loop &= 0x7F7F7F7F;
 	}
 
 	// ciph
+	if (!HasRoom(s, dataEnd, sizeof(unsigned int))) return false;
 	if ((*(unsigned int*)s & 0x7F7F7F7F) == 0x68706963) {
+		if (!HasRoom(s, dataEnd, sizeof(stCipher))) return false;
 		stCipher* ciph = (stCipher*)s; s += 6;//s+=sizeof(stCipher);
 		ciph->ciph &= 0x7F7F7F7F;
 		_ciph_type = bswap(ciph->type);
@@ -421,20 +499,26 @@ bool clHCA::Decrypt(const char* filenameHCA) {
 	}
 
 	// rva
+	if (!HasRoom(s, dataEnd, sizeof(unsigned int))) return false;
 	if ((*(unsigned int*)s & 0x7F7F7F7F) == 0x00617672) {
+		if (!HasRoom(s, dataEnd, sizeof(stRVA))) return false;
 		stRVA* rva = (stRVA*)s; s += sizeof(stRVA);
 		rva->rva &= 0x7F7F7F7F;
 	}
 
 	// comm
+	if (!HasRoom(s, dataEnd, sizeof(unsigned int))) return false;
 	if ((*(unsigned int*)s & 0x7F7F7F7F) == 0x6D6D6F63) {
+		if (!HasRoom(s, dataEnd, sizeof(stComment))) return false;
 		stComment* comm = (stComment*)s; s += 5;//s+=sizeof(stComment);
 		comm->comm &= 0x7F7F7F7F;
 		s += comm->len;
 	}
 
 	// pad
+	if (!HasRoom(s, dataEnd, sizeof(unsigned int))) return false;
 	if ((*(unsigned int*)s & 0x7F7F7F7F) == 0x00646170) {
+		if (!HasRoom(s, dataEnd, sizeof(stPadding))) return false;
 		stPadding* pad = (stPadding*)s; s += sizeof(stPadding);
 		pad->pad &= 0x7F7F7F7F;
 	}
@@ -453,9 +537,10 @@ bool clHCA::Decrypt(const char* filenameHCA) {
 
 	// ブロックデータを復号化
 	if (_ciph_type != 0) {
+		if (_blockSize < 2) { delete[] data2; fclose(fp); return false; }
 		for (unsigned int i = 0, a = size; i < _blockCount; i++, a += _blockSize) {
 			fseek(fp, a, SEEK_SET);
-			fread(data2, _blockSize, 1, fp);
+			if (_blockSize > 0 && fread(data2, _blockSize, 1, fp) != 1) return false;
 			_cipher.Mask(data2, _blockSize);
 			*(unsigned short*)&data2[_blockSize - 2] = bswap(CheckSum(data2, _blockSize - 2));
 			fseek(fp, a, SEEK_SET);
@@ -481,7 +566,11 @@ bool clHCA::DecodeToWavefile(const char* filenameHCA, const char* filenameWAV, f
 
 	// HCAファイルを開く
 	FILE* fp;
-	if (fopen_s(&fp, filenameHCA, "rb"))return false;
+	if (strlen(filenameHCA)) {
+		if (fopen_s(&fp, filenameHCA, "rb"))return false;
+	} else {
+		fp = stdin;
+	}
 
 	// 保存
 	if (!DecodeToWavefileStream(fp, filenameWAV, volume, mode, loop)) { fclose(fp); return false; }
@@ -499,26 +588,47 @@ bool clHCA::DecodeToWavefileStream(void* fpHCA, const char* filenameWAV, float v
 	//
 	FILE* fp1 = (FILE*)fpHCA;
 	unsigned int address = ftell(fp1);
+	bool seekable = true;
+	if (address == 0xFFFFFFFF) {
+		fprintf(stderr, "Reading from a non-seekable stream.\n");
+		seekable = false;
+	};
 
 	// ヘッダチェック
 	stHeader header;
 	memset(&header, 0, sizeof(header));
-	fread(&header, sizeof(header), 1, fp1);
+	if (fread(&header, sizeof(header), 1, fp1) != 1) return false;
 	if (!CheckFile(&header, sizeof(header)))return false;
 
 	// ヘッダ解析
+	stHeader headerBE = header; // keep the header before bswap
 	header.dataOffset = bswap(header.dataOffset);
+	if (header.dataOffset < sizeof(stHeader)) return false;
 	unsigned char* data1 = new unsigned char[header.dataOffset];
 	if (!data1) { fclose(fp1); return false; }
-	fseek(fp1, address, SEEK_SET);
-	fread(data1, header.dataOffset, 1, fp1);
+	memcpy(data1, &headerBE, sizeof(stHeader)); // reuse bytes already read
+	// fseek(fp1, address, SEEK_SET);
+	// if (fread(data1, header.dataOffset, 1, fp1) != 1) return false;
+	if (fread(data1 + sizeof(stHeader), header.dataOffset - sizeof(stHeader), 1, fp1) != 1) {
+		delete[] data1; return false;
+	}
 	if (!Decode(data1, header.dataOffset, 0)) { delete[] data1; return false; }
 
 	// WAVEファイルを開く
 	FILE* fp2;
-	if (fopen_s(&fp2, filenameWAV, "wb")) { delete[] data1; return false; }
+	if (strlen(filenameWAV)) {
+		if (fopen_s(&fp2, filenameWAV, "wb")) { delete[] data1; return false; }
+	} else {
+		fp2 = stdout;
+	}
+	bool seekable_output = true;
+	if (ftell(fp2) == -1) {
+		fprintf(stderr, "Writing to a non-seekable stream.\n");
+		seekable_output = false;
+	};
 
 	// WAVEヘッダを書き込み
+	#pragma pack(push, 1)
 	struct stWAVEHeader {
 		char riff[4];
 		unsigned int riffSize;
@@ -560,6 +670,7 @@ bool clHCA::DecodeToWavefileStream(void* fpHCA, const char* filenameWAV, float v
 		char data[4];
 		unsigned int dataSize;
 	}wavData = { 'd','a','t','a',0 };
+	#pragma pack(pop)
 	wavRiff.fmtType = (mode > 0) ? 1 : 3;
 	wavRiff.fmtChannelCount = _channelCount;
 	wavRiff.fmtBitCount = (mode > 0) ? mode : 32;
@@ -568,29 +679,48 @@ bool clHCA::DecodeToWavefileStream(void* fpHCA, const char* filenameWAV, float v
 	wavRiff.fmtSamplesPerSec = wavRiff.fmtSamplingRate * wavRiff.fmtSamplingSize;
 	if (_loopFlg) {
 		wavSmpl.samplePeriod = (unsigned int)(1 / (double)wavRiff.fmtSamplingRate * 1000000000);
-		wavSmpl.loop_Start = _loopStart * 0x80 * 8 + _muteFooter;//※計算方法不明
-		wavSmpl.loop_End = (_loopEnd + 1) * 0x80 * 8 - 1;//※計算方法不明
+		wavSmpl.loop_Start = _loopStart << 10;
+		wavSmpl.loop_End = _loopEnd << 10;
 		wavSmpl.loop_PlayCount = (_loopCount == 0x80) ? 0 : _loopCount;
 	}
 	else if (loop) {
 		wavSmpl.loop_Start = 0;
-		wavSmpl.loop_End = (_blockCount + 1) * 0x80 * 8 - 1;//※計算方法不明
+		wavSmpl.loop_End = _blockCount << 10;
 		_loopStart = 0;
 		_loopEnd = _blockCount;
 	}
 	if (_comm_comment) {
-		wavNote.noteSize = 4 + _comm_len + 1;
-		if (wavNote.noteSize & 3)wavNote.noteSize += 4 - (wavNote.noteSize & 3);
+		wavNote.noteSize = 4 + _comm_len + 1; // name + null-terminated, padded to 4 byte
+		if (wavNote.noteSize & 3) wavNote.noteSize += 4 - (wavNote.noteSize & 3); // padding
 	}
-	wavData.dataSize = _blockCount * 0x80 * 8 * wavRiff.fmtSamplingSize + (wavSmpl.loop_End - wavSmpl.loop_Start) * loop;
-	wavRiff.riffSize = 0x1C + ((_loopFlg && !loop) ? sizeof(wavSmpl) : 0) + (_comm_comment ? 8 + wavNote.noteSize : 0) + sizeof(wavData) + wavData.dataSize;
+	wavData.dataSize = (
+		(_blockCount << 10) +
+		(wavSmpl.loop_End - wavSmpl.loop_Start) * loop
+	) * wavRiff.fmtSamplingSize;
+	wavRiff.riffSize = 0x1C + (
+		(_loopFlg && !loop) ? sizeof(wavSmpl) : 0
+	) + (
+		_comm_comment ? 8 + wavNote.noteSize : 0
+	) + sizeof(wavData) + wavData.dataSize;
 	fwrite(&wavRiff, sizeof(wavRiff), 1, fp2);
 	if (_loopFlg && !loop)fwrite(&wavSmpl, sizeof(wavSmpl), 1, fp2);
 	if (_comm_comment) {
 		int address = ftell(fp2);
 		fwrite(&wavNote, sizeof(wavNote), 1, fp2);
 		fputs(_comm_comment, fp2);
-		fseek(fp2, address + 8 + wavNote.noteSize, SEEK_SET);
+		if (seekable_output) {
+			fseek(fp2, address + 8 + wavNote.noteSize, SEEK_SET);
+		} else {
+			// write null bytes
+			const unsigned int skip_bytes = wavNote.noteSize - strlen(_comm_comment) - 4;
+			unsigned char* null_bytes = new unsigned char[skip_bytes];
+			if (!null_bytes) {
+				delete[] data1; fclose(fp2); return false;
+			}
+			memset(null_bytes, 0, skip_bytes);
+			fwrite(null_bytes, skip_bytes, 1, fp2);
+			delete[] null_bytes;
+		}
 	}
 	fwrite(&wavData, sizeof(wavData), 1, fp2);
 
@@ -609,17 +739,77 @@ bool clHCA::DecodeToWavefileStream(void* fpHCA, const char* filenameWAV, float v
 	}
 	unsigned char* data2 = new unsigned char[_blockSize];
 	if (!data2) { delete[] data1; fclose(fp2); return false; }
-	if (!loop) {
-		if (!DecodeToWavefile_Decode(fp1, fp2, address + _dataOffset, _blockCount, data2, modeFunction)) { delete[] data2; delete[] data1; fclose(fp2); return false; }
+	if (seekable) {
+		unsigned int address2 = ftell(fp1);
+		if (address + _dataOffset != address2) {
+			fprintf(stderr, "Assertion error: address + _dataOffset != address2\n");
+			delete[] data2; delete[] data1; fclose(fp2); return false;
+		}
 	}
-	else {
+	if (!loop) {
+		if (!DecodeToWavefile_Decode(
+			fp1, fp2, 0xffffffff, _blockCount, data2, modeFunction
+		)) {
+			delete[] data2; delete[] data1; fclose(fp2); return false;
+		}
+	}
+	else if (seekable) {
 		unsigned int loopBlockOffset = _dataOffset + _loopStart * _blockSize;
 		unsigned int loopBlockCount = _loopEnd - _loopStart;
-		if (!DecodeToWavefile_Decode(fp1, fp2, address + _dataOffset, _loopEnd, data2, modeFunction)) { delete[] data2; delete[] data1; fclose(fp2); return false; }
-		for (int i = 1; i < loop; i++) {
-			if (!DecodeToWavefile_Decode(fp1, fp2, address + loopBlockOffset, loopBlockCount, data2, modeFunction)) { delete[] data2; delete[] data1; fclose(fp2); return false; }
+		if (!DecodeToWavefile_Decode(
+			fp1, fp2, address + _dataOffset, _loopEnd, data2, modeFunction
+		)) {
+			delete[] data2; delete[] data1; fclose(fp2); return false;
 		}
-		if (!DecodeToWavefile_Decode(fp1, fp2, address + loopBlockOffset, _blockCount - _loopStart, data2, modeFunction)) { delete[] data2; delete[] data1; fclose(fp2); return false; }
+		for (int i = 1; i < loop; i++) {
+			if (!DecodeToWavefile_Decode(
+				fp1, fp2, address + loopBlockOffset, loopBlockCount, data2, modeFunction
+			)) {
+				delete[] data2; delete[] data1; fclose(fp2); return false;
+			}
+		}
+		if (!DecodeToWavefile_Decode(
+			fp1, fp2, address + loopBlockOffset, _blockCount - _loopStart, data2, modeFunction
+		)) {
+			delete[] data2; delete[] data1; fclose(fp2); return false;
+		}
+	} else {
+		// non-seekable loop
+		unsigned int loopBlockCount = _loopEnd - _loopStart;
+	
+		if (!DecodeToWavefile_Decode(
+			fp1, fp2, 0xffffffff, _loopStart, data2, modeFunction
+		)) {
+			delete[] data2; delete[] data1; fclose(fp2); return false;
+		}
+
+		// backup all loop data to RAM
+		unsigned char* loopCache = new unsigned char[loopBlockCount * _blockSize];
+		if (!loopCache) { delete[] data2; delete[] data1; fclose(fp2); return false; }
+
+		if (!DecodeToWavefile_PopulateCache(
+			fp1, loopCache, loopBlockCount
+		)) {
+			delete[] loopCache; delete[] data2; delete[] data1; fclose(fp2); return false;
+		}
+
+		// Replaying from pure RAM without file access.
+		// total times: 1 + loop
+		for (int i = 0; i <= loop; i++) {
+			if (!DecodeToWavefile_DecodeFromCache(
+				loopCache, fp2, loopBlockCount, data2, modeFunction
+			)) {
+				delete[] loopCache; delete[] data2; delete[] data1; fclose(fp2); return false;
+			}
+		}
+
+		// current position should be at addr
+		if (!DecodeToWavefile_Decode(
+			fp1, fp2, 0xffffffff, _blockCount - _loopEnd, data2, modeFunction
+		)) {
+			delete[] loopCache; delete[] data2; delete[] data1; fclose(fp2); return false;
+		}
+		delete[] loopCache;
 	}
 	delete[] data2;
 	delete[] data1;
@@ -631,10 +821,36 @@ bool clHCA::DecodeToWavefileStream(void* fpHCA, const char* filenameWAV, float v
 }
 bool clHCA::DecodeToWavefile_Decode(void* fp1, void* fp2, unsigned int address, unsigned int count, void* data, void (*modeFunction)(float, void*)) {
 	float f;
-	fseek((FILE*)fp1, address, SEEK_SET);
-	for (unsigned int l = 0; l < count; l++, address += _blockSize) {
-		fread(data, _blockSize, 1, (FILE*)fp1);
-		if (!Decode(data, _blockSize, address))return false;
+	if (address != 0xffffffff) fseek((FILE*)fp1, address, SEEK_SET);
+	for (unsigned int l = 0; l < count; l++) {
+		if (_blockSize > 0 && fread(data, _blockSize, 1, (FILE*)fp1) != 1) return false;
+		if (!Decode(data, _blockSize, 0xdeadbeef))return false;
+		for (int i = 0; i < 8; i++) {
+			for (int j = 0; j < 0x80; j++) {
+				for (unsigned int k = 0; k < _channelCount; k++) {
+					f = _channel[k].wave[i][j] * _rva_volume;
+					if (f > 1) { f = 1; }
+					else if (f < -1) { f = -1; }
+					((void(*)(float, void*))modeFunction)(f, fp2);
+				}
+			}
+		}
+	}
+	return true;
+}
+bool clHCA::DecodeToWavefile_PopulateCache(void* fp1, unsigned char* loopCache, unsigned int count) {
+	float f;
+	for (unsigned int l = 0; l < count; l++) {
+		unsigned char* slot = &loopCache[l * _blockSize];
+		if (_blockSize > 0 && fread(slot, _blockSize, 1, (FILE*)fp1) != 1) return false;
+	}
+	return true;
+}
+bool clHCA::DecodeToWavefile_DecodeFromCache(unsigned char* loopCache, void* fp2, unsigned int count, void* data, void (*modeFunction)(float, void*)) {
+	float f;
+	for (unsigned int l = 0; l < count; l++) {
+		memcpy(data, &loopCache[l * _blockSize], _blockSize);
+		if (!Decode(data, _blockSize, 0xdeadbeef))return false;
 		for (int i = 0; i < 8; i++) {
 			for (int j = 0; j < 0x80; j++) {
 				for (unsigned int k = 0; k < _channelCount; k++) {
@@ -841,6 +1057,7 @@ void clHCA::clCipher::Init56(unsigned long long key) {
 	}
 
 	// CIPHテーブル
+	// 17 is coprime to 256 so every number would be unique and visited exactly once
 	t = &_table[1];
 	for (int i = 0, v = 0; i < 0x100; i++) {
 		v = (v + 0x11) & 0xFF;
@@ -896,12 +1113,15 @@ bool clHCA::Decode(void* data, unsigned int size, unsigned int address) {
 	// ヘッダ
 	if (address == 0) {
 		unsigned char* s = (unsigned char*)data;
+		unsigned char* dataEnd = s + size;
 
 		// サイズチェック
 		if (size < sizeof(stHeader))return false;
 
 		// HCA
+		if (!HasRoom(s, dataEnd, sizeof(unsigned int))) return false;
 		if ((*(unsigned int*)s & 0x7F7F7F7F) == 0x00414348) {
+			if (!HasRoom(s, dataEnd, sizeof(stHeader))) return false;
 			stHeader* hca = (stHeader*)s; s += sizeof(stHeader);
 			_version = bswap(hca->version);
 			_dataOffset = bswap(hca->dataOffset);
@@ -914,7 +1134,9 @@ bool clHCA::Decode(void* data, unsigned int size, unsigned int address) {
 		}
 
 		// fmt
+		if (!HasRoom(s, dataEnd, sizeof(unsigned int))) return false;
 		if ((*(unsigned int*)s & 0x7F7F7F7F) == 0x00746D66) {
+			if (!HasRoom(s, dataEnd, sizeof(stFormat))) return false;
 			stFormat* fmt = (stFormat*)s; s += sizeof(stFormat);
 			_channelCount = fmt->channelCount;
 			_samplingRate = bswap(fmt->samplingRate << 8);
@@ -929,7 +1151,9 @@ bool clHCA::Decode(void* data, unsigned int size, unsigned int address) {
 		}
 
 		// comp
+		if (!HasRoom(s, dataEnd, sizeof(unsigned int))) return false;
 		if ((*(unsigned int*)s & 0x7F7F7F7F) == 0x706D6F63) {
+			if (!HasRoom(s, dataEnd, sizeof(stCompress))) return false;
 			stCompress* comp = (stCompress*)s; s += sizeof(stCompress);
 			_blockSize = bswap(comp->blockSize);
 			_comp_r01 = comp->r01;
@@ -947,6 +1171,7 @@ bool clHCA::Decode(void* data, unsigned int size, unsigned int address) {
 
 		// dec
 		else if ((*(unsigned int*)s & 0x7F7F7F7F) == 0x00636564) {
+			if (!HasRoom(s, dataEnd, sizeof(stDecode))) return false;
 			stDecode* dec = (stDecode*)s; s += sizeof(stDecode);
 			_blockSize = bswap(dec->blockSize);
 			_comp_r01 = dec->r01;
@@ -965,8 +1190,12 @@ bool clHCA::Decode(void* data, unsigned int size, unsigned int address) {
 			return false;
 		}
 
+		if (!ValidateBandCounts(_comp_r05, _comp_r06, _comp_r07)) return false;
+
 		// vbr
+		if (!HasRoom(s, dataEnd, sizeof(unsigned int))) return false;
 		if ((*(unsigned int*)s & 0x7F7F7F7F) == 0x00726276) {
+			if (!HasRoom(s, dataEnd, sizeof(stVBR))) return false;
 			stVBR* vbr = (stVBR*)s; s += sizeof(stVBR);
 			_vbr_r01 = bswap(vbr->r01);
 			_vbr_r02 = bswap(vbr->r02);
@@ -978,7 +1207,9 @@ bool clHCA::Decode(void* data, unsigned int size, unsigned int address) {
 		}
 
 		// ath
+		if (!HasRoom(s, dataEnd, sizeof(unsigned int))) return false;
 		if ((*(unsigned int*)s & 0x7F7F7F7F) == 0x00687461) {
+			if (!HasRoom(s, dataEnd, sizeof(stATH))) return false;
 			stATH* ath = (stATH*)s; s += 6;//s+=sizeof(stATH);
 			_ath_type = ath->type;
 		}
@@ -987,7 +1218,9 @@ bool clHCA::Decode(void* data, unsigned int size, unsigned int address) {
 		}
 
 		// loop
+		if (!HasRoom(s, dataEnd, sizeof(unsigned int))) return false;
 		if ((*(unsigned int*)s & 0x7F7F7F7F) == 0x706F6F6C) {
+			if (!HasRoom(s, dataEnd, sizeof(stLoop))) return false;
 			stLoop* loop = (stLoop*)s; s += sizeof(stLoop);
 			_loopStart = bswap(loop->start);
 			_loopEnd = bswap(loop->end);
@@ -1005,7 +1238,9 @@ bool clHCA::Decode(void* data, unsigned int size, unsigned int address) {
 		}
 
 		// ciph
+		if (!HasRoom(s, dataEnd, sizeof(unsigned int))) return false;
 		if ((*(unsigned int*)s & 0x7F7F7F7F) == 0x68706963) {
+			if (!HasRoom(s, dataEnd, sizeof(stCipher))) return false;
 			stCipher* ciph = (stCipher*)s; s += 6;//s+=sizeof(stCipher);
 			_ciph_type = bswap(ciph->type);
 			if (!(_ciph_type == 0 || _ciph_type == 1 || _ciph_type == 0x38))return false;
@@ -1015,7 +1250,9 @@ bool clHCA::Decode(void* data, unsigned int size, unsigned int address) {
 		}
 
 		// rva
+		if (!HasRoom(s, dataEnd, sizeof(unsigned int))) return false;
 		if ((*(unsigned int*)s & 0x7F7F7F7F) == 0x00617672) {
+			if (!HasRoom(s, dataEnd, sizeof(stRVA))) return false;
 			stRVA* rva = (stRVA*)s; s += sizeof(stRVA);
 			_rva_volume = bswap(rva->volume);
 		}
@@ -1024,10 +1261,14 @@ bool clHCA::Decode(void* data, unsigned int size, unsigned int address) {
 		}
 
 		// comm
+		if (!HasRoom(s, dataEnd, sizeof(unsigned int))) return false;
 		if ((*(unsigned int*)s & 0x7F7F7F7F) == 0x6D6D6F63) {
+			if (!HasRoom(s, dataEnd, sizeof(stComment))) return false;
 			stComment* comm = (stComment*)s; s += 5;//s+=sizeof(stComment);
 			_comm_len = comm->len;
-			_comm_comment = (char*)s;
+			// _comm_comment = (char*)s;
+			unsigned char* nul = (unsigned char*)memchr(s, '\0', dataEnd - s);
+			_comm_comment = nul ? (char*)s : nullptr; // no over-reading an unterminated comment
 		}
 		else {
 			_comm_len = 0;

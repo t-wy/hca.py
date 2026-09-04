@@ -1,4 +1,5 @@
 ﻿#pragma once
+#include <cstddef>   // for size_t, used by CheckSum()
 
 //--------------------------------------------------
 // HCA(High Compression Audio)クラス
@@ -11,7 +12,9 @@ public:
 	static bool CheckFile(void* data, unsigned int size);
 
 	// チェックサム
-	static unsigned short CheckSum(void* data, int size, unsigned short sum = 0);
+	static unsigned short CheckSum(void* data, size_t size, unsigned short sum = 0);
+
+	bool ValidateBandCounts(unsigned int total, unsigned int base, unsigned int stereo);
 
 	// ヘッダ情報をコンソール出力
 	bool PrintInfo(const char* filenameHCA);
@@ -28,6 +31,7 @@ public:
 	//bool EncodeFromWavefileStream(void *fpWAV,const char *filenameHCA,float volume=1);
 
 private:
+#pragma pack(push, 1)
 	struct stHeader {//ファイル情報 (必須)
 		unsigned int hca;              // 'HCA'
 		unsigned short version;        // バージョン。v1.3とv2.0の存在を確認
@@ -130,6 +134,7 @@ private:
 	unsigned int _comm_len;
 	unsigned int _random;
 	char* _comm_comment;
+#pragma pack(pop)
 	class clATH {
 	public:
 		clATH();
@@ -187,6 +192,8 @@ private:
 	}_channel[0x10];
 	bool Decode(void* data, unsigned int size, unsigned int address);
 	bool DecodeToWavefile_Decode(void* fp1, void* fp2, unsigned int address, unsigned int count, void* data, void (*modeFunction)(float, void*));
+	bool DecodeToWavefile_PopulateCache(void* fp1, unsigned char* loopCache, unsigned int count);
+	bool DecodeToWavefile_DecodeFromCache(unsigned char* loopCache, void* fp2, unsigned int count, void* data, void (*modeFunction)(float, void*));
 	static void DecodeToWavefile_DecodeModeFloat(float f, void* fp);
 	static void DecodeToWavefile_DecodeMode8bit(float f, void* fp);
 	static void DecodeToWavefile_DecodeMode16bit(float f, void* fp);

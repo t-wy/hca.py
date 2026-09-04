@@ -14,10 +14,22 @@
 #include <stdio.h>
 #include "clHCA.h"
 #ifndef strcpy_s
-	#define strcpy_s(a,b,c) strcpy(a,c)
+	// #define strcpy_s(a,b,c) strcpy(a,c)
+	static inline int strcpy_s(char* dst, size_t dstSize, const char* src) {
+		size_t len = strlen(src);
+		if (len >= dstSize) return 1; // would truncate/overflow — refuse
+		memcpy(dst, src, len + 1);
+		return 0;
+	}
 #endif
 #ifndef strcat_s
-	#define strcat_s(a,b,c) strcat(a,c)
+	// #define strcat_s(a,b,c) strcat(a,c)
+	static inline int strcat_s(char* dst, size_t dstSize, const char* src) {
+		size_t dstLen = strlen(dst), srcLen = strlen(src);
+		if (dstLen + srcLen >= dstSize) return 1;
+		memcpy(dst + dstLen, src, srcLen + 1);
+		return 0;
+	}
 #endif
 
 //--------------------------------------------------
@@ -91,17 +103,17 @@ int main(int argc, char* argv[]) {
 	for (int i = 1; i < argc; i++) {
 		if (argv[i][0] == '-') {
 			switch (argv[i][1]) {
-			case 'o':if (i + 1 < argc) { filenameOut = argv[++i]; }break;
-				//case 'd':decodeFlg=true;break;
-			case 'v':volume = (float)_atof(argv[++i]); break;
-			case 'a':if (i + 1 < argc) { ciphKey ^= (ciphKey & 0xffffffffLL) ^ atoi16(argv[++i]); }break;
-			case 'b':if (i + 1 < argc) { ciphKey ^= (ciphKey & 0xffffffff00000000LL) ^ (atoi16(argv[++i]) << 32); }break;
-			case 'k':if (i + 1 < argc) { ciphKey = atoi16(argv[++i]); }break;
-			case 's':if (i + 1 < argc) { subkey = _atoi(argv[++i]); }break;
-			case 'm':if (i + 1 < argc) { mode = _atoi(argv[++i]); }break;
-			case 'l':if (i + 1 < argc) { loop = _atoi(argv[++i]); }break;
-			case 'i':info = true; break;
-			case 'c':decrypt = true; break;
+				case 'o':if (i + 1 < argc) { filenameOut = argv[++i]; }break;
+					//case 'd':decodeFlg=true;break;
+				case 'v':if (i + 1 < argc) { volume = (float)_atof(argv[++i]); } break;
+				case 'a':if (i + 1 < argc) { ciphKey ^= (ciphKey & 0xffffffffLL) ^ atoi16(argv[++i]); }break;
+				case 'b':if (i + 1 < argc) { ciphKey ^= (ciphKey & 0xffffffff00000000LL) ^ (atoi16(argv[++i]) << 32); }break;
+				case 'k':if (i + 1 < argc) { ciphKey = atoi16(argv[++i]); }break;
+				case 's':if (i + 1 < argc) { subkey = _atoi(argv[++i]); }break;
+				case 'm':if (i + 1 < argc) { mode = _atoi(argv[++i]); }break;
+				case 'l':if (i + 1 < argc) { loop = _atoi(argv[++i]); }break;
+				case 'i':info = true; break;
+				case 'c':decrypt = true; break;
 			}
 		}
 		else if (*argv[i]) {
@@ -116,8 +128,10 @@ int main(int argc, char* argv[]) {
 
 	// 入力チェック
 	if (!count) {
-		printf("Error: 入力ファイルを指定してください。\n");
-		return -1;
+		// fprintf(stderr, "Error: 入力ファイルを指定してください。\n");
+		// return -1;
+		argv[0] = ""; // stdin
+		count = 1;
 	}
 
 	// デコード
@@ -129,38 +143,50 @@ int main(int argc, char* argv[]) {
 		// デフォルト出力ファイル名
 		char path[MAX_PATH];
 		if (!(filenameOut && filenameOut[0])) {
-			strcpy_s(path, sizeof(path), argv[i]);
-			char* d1 = strrchr(path, '\\');
-			char* d2 = strrchr(path, '/');
-			char* e = strrchr(path, '.');
-			if (e && d1 < e && d2 < e)*e = '\0';
-			strcat_s(path, sizeof(path), ".wav");
-			filenameOut = path;
+			if (strlen(argv[i])) {
+				// strcpy_s(path, sizeof(path), argv[i]);
+				if (strcpy_s(path, sizeof(path), argv[i])) {
+					fprintf(stderr, "Error: 入力ファイル名が長すぎます。\n");
+					continue;
+				};
+				char* d1 = strrchr(path, '\\');
+				char* d2 = strrchr(path, '/');
+				char* e = strrchr(path, '.');
+				if (e && d1 < e && d2 < e)*e = '\0'; // remove extension
+				// strcat_s(path, sizeof(path), ".wav");
+				if (strcat_s(path, sizeof(path), ".wav")) {
+					fprintf(stderr, "Error: 出力ファイル名が長すぎます。\n");
+					continue;
+				};
+				filenameOut = path;
+			} else {
+				filenameOut = ""; // stdout
+			}
 		}
 
 		// ヘッダ情報のみ表示
 		if (info) {
-			printf("%s のヘッダ情報\n", argv[i]);
+			fprintf(stderr, "%s のヘッダ情報\n", argv[i]);
 			clHCA hca(0);
 			hca.PrintInfo(argv[i]);
-			printf("\n");
+			fprintf(stderr, "\n");
 		}
 
 		// 復号化
 		else if (decrypt) {
-			printf("%s を復号化中...\n", argv[i]);
+			fprintf(stderr, "%s を復号化中...\n", argv[i]);
 			clHCA hca(ciphKey);
 			if (!hca.Decrypt(argv[i])) {
-				printf("Error: 復号化に失敗しました。\n");
+				fprintf(stderr, "Error: 復号化に失敗しました。\n");
 			}
 		}
 
 		// デコード
 		else {
-			printf("%s をデコード中...\n", argv[i]);
+			fprintf(stderr, "%s をデコード中...\n", argv[i]);
 			clHCA hca(ciphKey);
 			if (!hca.DecodeToWavefile(argv[i], filenameOut, volume, mode, loop)) {
-				printf("Error: デコードに失敗しました。\n");
+				fprintf(stderr, "Error: デコードに失敗しました。\n");
 			}
 		}
 
