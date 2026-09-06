@@ -5,6 +5,8 @@
 #define WIN32_LEAN_AND_MEAN
 #if _WIN32
 	#include <Windows.h>
+	#include <io.h>
+	#include <fcntl.h>
 #else
 	#include <cstring>
 #endif
@@ -88,6 +90,10 @@ long long atoi16(const char* s) {
 // メイン
 //--------------------------------------------------
 int main(int argc, char* argv[]) {
+	#ifdef _WIN32
+		_setmode(_fileno(stdin), _O_BINARY);
+		_setmode(_fileno(stdout), _O_BINARY);
+	#endif
 
 	// コマンドライン解析
 	unsigned int count = 0;

@@ -4,6 +4,7 @@ import io, os, platform, subprocess, struct, tempfile, traceback, wave, numpy as
 from scipy.fft import idct
 from collections import namedtuple as T
 from typing import Optional
+from pathlib import Path
 
 try:
     import numba
@@ -306,45 +307,47 @@ def temp_filename():
         temp_file.close()
     return temp_file_path
 
-def try_compile_cpp():
+def get_cpp_abspath():
+    is_windows = platform.system() == 'Windows'
+    rpath = Path(__file__).parent
+    ext = ".exe" if is_windows else ""
+    return str(rpath / ("HCADecoder" + ext))
+
+
+def try_compile_cpp() -> bool:
     is_windows = platform.system() == 'Windows'
     def check_exists(path):
         try:
-            subprocess.check_output(['where' if is_windows else 'which', path], cwd=rcwd) # windows
+            subprocess.check_output(['where' if is_windows else 'which', path], cwd=str(rpath)) # windows
             return True
-        except Exception as e:
+        except:
             return False
-    rpath = os.path.dirname(__file__) + "/"
-    rcwd = rpath
-    if rpath == "/":
-        rpath = ""
-        rcwd = None
-    if os.path.exists(rpath + "hca_src"):
-        decoder = ("" if is_windows else "./") + 'HCADecoder'
-        ext = ".exe" if is_windows else ""
+    rpath = Path(__file__).parent
+    if os.path.exists(str(rpath / "hca_src")):
+        decoder_location = get_cpp_abspath()
         # find executable
-        last_src_modified_time = max(
-            os.path.getmtime(rpath + "hca_src/HCADecoder.cpp"),
-            os.path.getmtime(rpath + "hca_src/clHCA.cpp"),
-            os.path.getmtime(rpath + "hca_src/clHCA.h"),
-        )
+        last_src_modified_time = int(max(
+            os.path.getmtime(str(rpath / "hca_src/HCADecoder.cpp")),
+            os.path.getmtime(str(rpath / "hca_src/clHCA.cpp")),
+            os.path.getmtime(str(rpath / "hca_src/clHCA.h")),
+        ))
         if (
-            not check_exists(decoder) or (
-                os.path.getmtime(rpath + "HCADecoder" + ext) <
+            not os.path.isfile(decoder_location) or (
+                int(os.path.getmtime(decoder_location)) <
                 last_src_modified_time
             )
         ):
-            if os.path.isfile(rpath + "HCADecoder" + ext):
-                os.unlink(rpath + "HCADecoder" + ext)
+            if os.path.isfile(decoder_location):
+                os.unlink(decoder_location)
             if check_exists("g++"):
                 # compile
                 try:
-                    subprocess.check_output(['g++', '-w', '-o', '../HCADecoder', 'clHCA.cpp', 'HCADecoder.cpp'], cwd=rpath + "hca_src")
+                    subprocess.check_output(['g++', '-w', '-o', '../HCADecoder', 'clHCA.cpp', 'HCADecoder.cpp'], cwd=str(rpath / "hca_src"))
                 except:
-                    return False, None
-        if check_exists(decoder):
-            return True, (rpath, rcwd)
-    return False, None
+                    return False
+        if os.path.isfile(decoder_location):
+            return True
+    return False
 
 def hca_decode(
     data: bytes,
@@ -352,11 +355,9 @@ def hca_decode(
     compile: bool = True, use_numba: bool = True
 ):
     if compile:
-        compile_result, path = try_compile_cpp()
-        if compile_result:
+        if try_compile_cpp():
             try:
-                rpath, rcwd = path
-                return hca_decode_internal_cpp(data, cipher, subkey, rpath, rcwd)
+                return hca_decode_internal_cpp(data, cipher, subkey)
             except:
                 traceback.print_exc()
     if use_numba and _HAVE_NUMBA:
@@ -805,17 +806,16 @@ def hca_decode_internal_numba(
 def hca_decode_internal_cpp(
     data: bytes,
     cipher: Optional[int], subkey: Optional[int],
-    rpath: str, rcwd: str
 ):
     assert len(data) # otherwise stdin waits infinitely
     # test on stdin to stdout
-    decoderabs = rpath + 'HCADecoder'
-    arguments = [decoderabs]
+    decoder = get_cpp_abspath()
+    arguments = [decoder]
     if cipher is not None:
         arguments.extend(['-k', f"{cipher:016x}"])
     if subkey is not None:
         arguments.extend(['-s', str(subkey)])
-    output = subprocess.check_output(arguments, input=data, cwd=rcwd, stderr=subprocess.DEVNULL)
+    output = subprocess.check_output(arguments, input=data, stderr=subprocess.DEVNULL)
     return io.BytesIO(output)
 
 def decode1(
