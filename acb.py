@@ -355,7 +355,7 @@ class TrackList(object):
     
     def get_table(self, table_name: str):
         table = self.utf.rows[0].get(table_name)
-        if table is None:
+        if table is None or len(table) == 0:
             return []
         return UTFTable(
             io.BytesIO(table),
