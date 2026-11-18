@@ -10,22 +10,11 @@ from collections import namedtuple as T
 from typing import Optional, Union, BinaryIO, Tuple, List, Callable
 
 COLUMN_STORAGE_MASK = 0xF0
-COLUMN_STORAGE_PERROW = 0x50
-COLUMN_STORAGE_CONSTANT = 0x30
-COLUMN_STORAGE_CONSTANT2 = 0x70
-COLUMN_STORAGE_ZERO = 0x10
 
-COLUMN_TYPE_MASK = 0x0F
-COLUMN_TYPE_DATA = 0x0B
-COLUMN_TYPE_STRING = 0x0A
-COLUMN_TYPE_FLOAT = 0x08
-COLUMN_TYPE_8BYTE = 0x06
-COLUMN_TYPE_4BYTE2 = 0x05
-COLUMN_TYPE_4BYTE = 0x04
-COLUMN_TYPE_2BYTE2 = 0x03
-COLUMN_TYPE_2BYTE = 0x02
-COLUMN_TYPE_1BYTE2 = 0x01
-COLUMN_TYPE_1BYTE = 0x00
+COLUMN_STORAGE_ZERO = 0x10
+COLUMN_STORAGE_CONSTANT = 0x30
+COLUMN_STORAGE_PERROW = 0x50
+COLUMN_STORAGE_CONSTANT2 = 0x70
 
 WAVEFORM_ENCODE_TYPE_ADX = 0
 WAVEFORM_ENCODE_TYPE_HCA = 2
@@ -36,42 +25,35 @@ WAVEFORM_ENCODE_TYPE_BCWAV = 9
 WAVEFORM_ENCODE_TYPE_ATRAC9 = 11
 WAVEFORM_ENCODE_TYPE_NINTENDO_DSP = 13
 
+COLUMN_TYPE_MASK = 0x0F
 
-# string and data fields require more information
-def promise_data(r):
-    offset = r.uint32_t()
-    size = r.uint32_t()
-    return lambda h: r.bytes(size, at=h.data_offset + 8 + offset)
-
-
-def promise_string(r):
-    offset = r.uint32_t()
-    return lambda h: r.string0(at=h.string_table_offset + 8 + offset)
-
-
-column_data_dtable = {
-    COLUMN_TYPE_DATA: promise_data,
-    COLUMN_TYPE_STRING: promise_string,
-    COLUMN_TYPE_FLOAT: lambda r: r.float32_t(),
-    COLUMN_TYPE_8BYTE: lambda r: r.uint64_t(),
-    COLUMN_TYPE_4BYTE2: lambda r: r.int32_t(),
-    COLUMN_TYPE_4BYTE: lambda r: r.uint32_t(),
-    COLUMN_TYPE_2BYTE2: lambda r: r.int16_t(),
-    COLUMN_TYPE_2BYTE: lambda r: r.uint16_t(),
-    COLUMN_TYPE_1BYTE2: lambda r: r.int8_t(),
-    COLUMN_TYPE_1BYTE: lambda r: r.uint8_t()}
+COLUMN_TYPE_UCHAR = 0x00
+COLUMN_TYPE_SCHAR = 0x01
+COLUMN_TYPE_USHORT = 0x02
+COLUMN_TYPE_SSHORT = 0x03
+COLUMN_TYPE_UINT = 0x04
+COLUMN_TYPE_SINT = 0x05
+COLUMN_TYPE_ULONG = 0x06
+COLUMN_TYPE_SLONG = 0x07
+COLUMN_TYPE_FLOAT = 0x08
+COLUMN_TYPE_DOUBLE = 0x09
+COLUMN_TYPE_STRING = 0x0A
+COLUMN_TYPE_DATA = 0x0B
 
 column_data_stable = {
-    COLUMN_TYPE_DATA: "8s",
-    COLUMN_TYPE_STRING: "4s",
+    COLUMN_TYPE_UCHAR: "B",
+    COLUMN_TYPE_SCHAR: "b",
+    COLUMN_TYPE_USHORT: "H",
+    COLUMN_TYPE_SSHORT: "h",
+    COLUMN_TYPE_UINT: "I",
+    COLUMN_TYPE_SINT: "i",
+    COLUMN_TYPE_ULONG: "Q",
+    COLUMN_TYPE_SLONG: "q",
     COLUMN_TYPE_FLOAT: "f",
-    COLUMN_TYPE_8BYTE: "Q",
-    COLUMN_TYPE_4BYTE2: "i",
-    COLUMN_TYPE_4BYTE: "I",
-    COLUMN_TYPE_2BYTE2: "h",
-    COLUMN_TYPE_2BYTE: "H",
-    COLUMN_TYPE_1BYTE2: "b",
-    COLUMN_TYPE_1BYTE: "B"}
+    COLUMN_TYPE_DOUBLE: "d",
+    COLUMN_TYPE_STRING: "4s",
+    COLUMN_TYPE_DATA: "8s",
+}
 
 wave_type_ftable = {
     WAVEFORM_ENCODE_TYPE_ADX: ".adx",
@@ -81,11 +63,24 @@ wave_type_ftable = {
     WAVEFORM_ENCODE_TYPE_ATRAC3: ".at3",
     WAVEFORM_ENCODE_TYPE_ATRAC9: ".at9",
     WAVEFORM_ENCODE_TYPE_BCWAV: ".bcwav",
-    WAVEFORM_ENCODE_TYPE_NINTENDO_DSP: ".dsp"}
+    WAVEFORM_ENCODE_TYPE_NINTENDO_DSP: ".dsp"
+}
+
+REFERENCE_EMPTY = 0
+REFERENCE_WAVEFORM = 1
+REFERENCE_SYNTH = 2
+REFERENCE_SEQUENCE = 3
+REFERENCE_BLOCK_SEQUENCE = 8
 
 BYTE_ZERO = 0
-def JOIN_BYTE_ARRAY(sr):
-    return bytes(sr)
+
+EVENT_END = 0
+EVENT_NOTE_ON = 2000 # SYNTH = 2, SEQUENCE = 3
+EVENT_DELAY_MS = 2001 # milliseconds (unsigned int)
+EVENT_SET_SYNTH_OR_WAVEFORM = 2002
+EVENT_NOTE_ON_WITH_NO = 2003
+EVENT_NOTE_ON_WITH_DURATION = 2004
+EVENT_DELAY_US = 2005 # microseconds (signed short)
 
 def readfunc(fmt):
     a = struct.Struct(fmt)
@@ -120,6 +115,7 @@ class R(object):
     int64_t = latebinder(readfunc(">q"))
     uint64_t = latebinder(readfunc(">Q"))
     float32_t = latebinder(readfunc(">f"))
+    float64_t = latebinder(readfunc(">d"))
 
     le_int8_t = latebinder(readfunc("<b"))
     le_uint8_t = latebinder(readfunc("<B"))
@@ -130,6 +126,7 @@ class R(object):
     le_int64_t = latebinder(readfunc("<q"))
     le_uint64_t = latebinder(readfunc("<Q"))
     le_float32_t = latebinder(readfunc("<f"))
+    le_float64_t = latebinder(readfunc("<d"))
 
     def tell(self):
         return self.f.tell()
@@ -175,26 +172,19 @@ class R(object):
             self.f.seek(back)
             return d
 
-        bk = self.f.tell()
-        tl = 0
-        sr = []
-        while 1:
+        back = self.f.tell()
+        parts = []
+        while True:
             b = self.f.read(16)
-            tl += len(b)
-
             if len(b) == 0:
                 raise Exception("EOF")
-
-            for c in b:
-                if c != BYTE_ZERO:
-                    sr.append(c)
-                else:
-                    break
-            else:
-                continue
-            break
-        string = JOIN_BYTE_ARRAY(sr)
-        self.f.seek(bk + len(string) + 1)
+            null_pos = b.find(b"\x00")
+            if null_pos != -1:
+                parts.append(b[:null_pos])
+                break
+            parts.append(b)
+        string = b"".join(parts)
+        self.f.seek(back + len(string) + 1)
         return string.decode(self.encoding)
 
 class Struct(struct.Struct):
@@ -207,18 +197,26 @@ class Struct(struct.Struct):
         return self.out_type(* struct.Struct.unpack(self, buf))
 
 utf_header_t = Struct(">IHHIIIHHI",
-    T("utf_header_t", ("table_size", "u1", "row_offset", "string_table_offset",
-    "data_offset", "table_name_offset", "number_of_fields", "row_size", "number_of_rows")))
+    T("utf_header_t", (
+        "table_size", "version", "row_offset", "string_offset",
+        "data_offset", "name_offset", "field_count", "row_size", "row_count"
+    ))
+)
 
 class UTFTable(object):
-    def __init__(self, file, *, encoding="sjis"):
+    def __init__(self, file, *, encoding="cp932"):
         buf = R(file, encoding=encoding)
         magic = buf.uint32_t()
-        if magic != 0x40555446:
+        if magic != 0x40555446: # @UTF
             raise ValueError("bad magic")
 
         self.header = buf.struct(utf_header_t)
-        self.name = buf.string0(at=self.header.string_table_offset + 8 + self.header.table_name_offset)
+        self.name = buf.string0(
+            at = (
+                self.header.string_offset + 8 +
+                self.header.name_offset
+            )
+        )
         self.encoding = encoding
 
         buf.seek(0x20)
@@ -229,97 +227,266 @@ class UTFTable(object):
 
     def read_schema(self, buf):
         buf.seek(0x20)
+        body_offset = 8
 
         dynamic_keys = []
         format = ">"
         constants = {}
 
-        for _ in range(self.header.number_of_fields):
+        for _ in range(self.header.field_count):
             field_type = buf.uint8_t()
             name_offset = buf.uint32_t()
 
-            occurrence = field_type & COLUMN_STORAGE_MASK
+            storage_type = field_type & COLUMN_STORAGE_MASK
             type_key = field_type & COLUMN_TYPE_MASK
 
-            if occurrence in (COLUMN_STORAGE_CONSTANT, COLUMN_STORAGE_CONSTANT2):
-                name = buf.string0(at=self.header.string_table_offset + 8 + name_offset)
-                val = column_data_dtable[type_key](buf)
-                constants[name] = val
-            else:
-                dynamic_keys.append(buf.string0(at=self.header.string_table_offset + 8 + name_offset))
-                format += column_data_stable[type_key]
+            if type_key not in column_data_stable:
+                raise Exception("Unknown column type: " + hex(type_key))
 
-        for k in constants.keys():
-            if callable(constants[k]):
-                constants[k] = constants[k](self.header)
+            name = buf.string0(
+                at = self.header.string_offset + body_offset + name_offset
+            )
+            field_format = column_data_stable[type_key]
+            constant = None
+            if storage_type in (
+                COLUMN_STORAGE_CONSTANT, COLUMN_STORAGE_CONSTANT2
+            ):
+                constant = buf.struct(self._build_struct(buf, field_format))[0]
+            elif storage_type == COLUMN_STORAGE_ZERO:
+                constant = (
+                    "" if type_key == COLUMN_TYPE_STRING else
+                    b"" if type_key == COLUMN_TYPE_DATA else
+                    0.0 if type_key in (COLUMN_TYPE_FLOAT, COLUMN_TYPE_DOUBLE) else
+                    0
+                )
+            else:
+                dynamic_keys.append(name)
+                format += field_format
+                continue
+            constants[name] = constant
 
         self.dynamic_keys = dynamic_keys
         self.struct_format = format
         self.constants = constants
+    
+    def _build_struct(self, buf, format):
+        return Struct(format, functools.partial(self.resolve, buf))
+    
+    def _resolve(self, buf, val):
+        body_offset = 8
+        if isinstance(val, bytes):
+            if len(val) == 8: # COLUMN_TYPE_DATA
+                offset, size = struct.unpack(">II", val)
+                return buf.bytes(
+                    size, at=self.header.data_offset + body_offset + offset
+                )
+            else: # COLUMN_TYPE_STRING
+                offset = struct.unpack(">I", val)[0]
+                return buf.string0(
+                    at=self.header.string_offset + body_offset + offset
+                )
+        return val
 
     def resolve(self, buf, *args):
-        ret = []
-        for val in args:
-            if isinstance(val, bytes):
-                if len(val) == 8:
-                    offset, size = struct.unpack(">II", val)
-                    ret.append(buf.bytes(size, at=self.header.data_offset + 8 + offset))
-                else:
-                    offset = struct.unpack(">I", val)[0]
-                    ret.append(buf.string0(at=self.header.string_table_offset + 8 + offset))
-            else:
-                ret.append(val)
-        return tuple(ret)
+        return tuple(
+            self._resolve(buf, val)
+            for val in args
+        )
 
     def iter_rows(self, buf):
-        sfmt = Struct(self.struct_format, functools.partial(self.resolve, buf))
-        for n in range(self.header.number_of_rows):
-            values = buf.struct(sfmt)
-            ret = {k: v for k, v in zip(self.dynamic_keys, values)}
+        sfmt = self._build_struct(buf, self.struct_format)
+        for n in range(self.header.row_count):
+            ret = {
+                k: v for k, v in
+                zip(self.dynamic_keys, buf.struct(sfmt))
+            }
             ret.update(self.constants)
             yield ret
 
     def __repr__(self):
         return "<UTFTable '{1}' with {0} rows >".format(len(self.rows), self.name)
 
-track_t = T("track_t", ("cue_id", "name", "memory_wav_id", "external_wav_id", "enc_type", "is_stream"))
+track_t = T("track_t", ("cue_id", "name", "enc_type", "is_stream"))
 
 class TrackList(object):
-    def __init__(self, utf):
-        cue_handle = io.BytesIO(utf.rows[0]["CueTable"])
-        nam_handle = io.BytesIO(utf.rows[0]["CueNameTable"])
-        wav_handle = io.BytesIO(utf.rows[0]["WaveformTable"])
-        syn_handle = io.BytesIO(utf.rows[0]["SynthTable"])
-
-        cues = UTFTable(cue_handle, encoding=utf.encoding)
-        nams = UTFTable(nam_handle, encoding=utf.encoding)
-        wavs = UTFTable(wav_handle, encoding=utf.encoding)
-        syns = UTFTable(syn_handle, encoding=utf.encoding)
+    def __init__(self, utf: UTFTable):
+        self.utf = utf
+        cues = self.get_table("CueTable")
+        nams = self.get_table("CueNameTable")
+        self.wavs = self.get_table("WaveformTable")
+        self.syns = self.get_table("SynthTable")
+        self.seqs = self.get_table("SequenceTable")
+        self.blk_seqs = self.get_table("BlockSequenceTable")
+        self.blks = self.get_table("BlockTable")
+        self.trks = self.get_table("TrackTable")
+        self.evts = self.get_table("TrackEventTable")
+        if len(self.evts) == 0:
+            self.evts = self.get_table("CommandTable")
 
         self.tracks: List[track_t] = []
 
         name_map = {}
-        for row in nams.rows:
+        for row in nams:
             name_map[row["CueIndex"]] = row["CueName"]
 
-        for ind, row in enumerate(cues.rows):
-            if row["ReferenceType"] not in {3, 8}:
-                raise RuntimeError("ReferenceType {0} not implemented.".format(row["ReferenceType"]))
+        for cue_index, row in enumerate(cues):
+            cue_name = name_map.get(
+                cue_index,
+                "UNKNOWN_{}".format(row.get("CueId", cue_index))
+            )
+            ref_type = row["ReferenceType"]
+            ref_index = row["ReferenceIndex"]
+            wav_indices = self.resolve_reference(ref_type, ref_index, set())
+            num_related = row.get("NumRelatedWaveforms")
+            if num_related is not None and num_related != len(wav_indices):
+                print(
+                    "Expected {} waveforms, resolved {}".format(
+                        num_related, len(wav_indices)
+                    )
+                )
+            if len(wav_indices) == 1:
+                for wav_index in wav_indices:
+                    self.append_track(cue_name, wav_index)
+            else:
+                for i, wav_index in enumerate(wav_indices):
+                    suffix = "_{:>02}".format(i + 1)
+                    self.append_track(cue_name + suffix, wav_index)
 
-            if row["ReferenceIndex"] >= len(syns.rows):
+    
+    def get_table(self, table_name: str):
+        table = self.utf.rows[0].get(table_name)
+        if table is None:
+            return []
+        return UTFTable(
+            io.BytesIO(table),
+            encoding=self.utf.encoding
+        ).rows
+    
+    def resolve_reference(self, ref_type, ref_index, visited):
+        key = (ref_type, ref_index)
+        if key in visited:
+            return []
+        visited.add(key)
+        if ref_type == REFERENCE_EMPTY:
+            return []
+        if ref_type == REFERENCE_WAVEFORM:
+            if ref_index >= len(self.wavs):
+                print("Invalid Waveform Index {}".format(ref_index))
+                return []
+            return [ref_index]
+        if ref_type == REFERENCE_SYNTH:
+            if ref_index >= len(self.syns):
+                print("Invalid Synth Index {}".format(ref_index))
+                return []
+            ref_items = self.short_list(self.syns[ref_index].get("ReferenceItems"))
+            return [
+                entry
+                for a, b in zip(
+                    ref_items[::2],
+                    ref_items[1:2]
+                )
+                for entry in self.resolve_reference(a, b, visited)
+            ]
+        if ref_type == REFERENCE_SEQUENCE:
+            if ref_index >= len(self.seqs):
+                print("Invalid Sequence Index {}".format(ref_index))
+                return []
+            return self.resolve_sequence(
+                self.short_list(
+                    self.seqs[ref_index].get("TrackIndex")
+                ),
+                visited
+            )
+        if ref_type == REFERENCE_BLOCK_SEQUENCE:
+            if ref_index >= len(self.blk_seqs):
+                print("Invalid Block Sequence Index {}".format(ref_index))
+                return []
+            blk_seq = self.blk_seqs[ref_index]
+            return self.resolve_sequence(
+                self.short_list(
+                    blk_seq.get("TrackIndex")
+                ),
+                visited
+            ) + [
+                track_index
+                for block_index in self.short_list(
+                    blk_seq.get("BlockIndex")
+                )
+                if block_index < len(self.blks)
+                for track_index in self.resolve_sequence(
+                    self.short_list(
+                        self.blks[block_index].get("TrackIndex")
+                    ),
+                    visited
+                )
+            ]
+        print("Unimplemented Reference Type {}".format(ref_type))
+        return []
+    
+    def resolve_sequence(self, track_indices: Tuple[int, ...], visited):
+        result = []
+        for track_index in track_indices:
+            if track_index >= len(self.trks):
+                print("Invalid track Index {}".format(track_index))
                 continue
-            r_data = syns.rows[row["ReferenceIndex"]]["ReferenceItems"]
-            a, b = struct.unpack(">HH", r_data)
+            track = self.trks[track_index]
+            event_index = track.get("EventIndex", track.get("CommandIndex"))
+            if (
+                event_index is None or
+                event_index == 0xffff or # -1
+                event_index >= len(self.evts)
+            ):
+                continue
+            event = self.evts[event_index]
+            commands = event.get("Command")
+            if commands is None:
+                continue
+            cursor = 0
+            while cursor + 3 <= len(commands):
+                data = commands[cursor : cursor + 3]
+                if len(data) < 3:
+                    break
+                code = (data[0] << 8) | data[1]
+                size = data[2]
+                cursor += 3
+                payload = commands[cursor : cursor + size]
+                cursor += size
+                if code in (
+                    EVENT_NOTE_ON,
+                    EVENT_NOTE_ON_WITH_NO
+                ) and len(payload) >= 4:
+                    result.extend(self.resolve_reference(
+                        (payload[0] << 8) | payload[1],
+                        (payload[2] << 8) | payload[3],
+                        visited
+                    ))
+                if code == EVENT_END:
+                    break
+        return result
 
-            wav_id = wavs.rows[b].get("Id")
-            if wav_id is None:
-                wav_id = wavs.rows[b]["MemoryAwbId"]
-            extern_wav_id = wavs.rows[b]["StreamAwbId"]
-            enc = wavs.rows[b]["EncodeType"]
-            is_stream = wavs.rows[b]["Streaming"]
+    def short_list(self, data: Optional[bytes]) -> Tuple[int, ...]:
+        if not data:
+            return []
+        size = len(data) >> 1
+        return struct.unpack(
+            ">" + "H" * size,
+            data[:size << 1]
+        )
+    
+    def append_track(self, cue_name, wav_index):
+        wav = self.wavs[wav_index]
+        memory_awb_id = wav.get("Id")
+        if memory_awb_id is None:
+            memory_awb_id = wav["MemoryAwbId"]
+        stream_awb_id = wav["StreamAwbId"]
+        enc = wav["EncodeType"]
+        is_stream = wav["Streaming"]
+        awb_id = stream_awb_id if is_stream else memory_awb_id
 
-            self.tracks.append(track_t(row["CueId"], name_map.get(ind, "UNKNOWN"), wav_id,
-                extern_wav_id, enc, is_stream))
+        self.tracks.append(track_t(
+            awb_id, cue_name, enc, is_stream
+        ))
+
 
 def align(n):
     def _align(number):
@@ -362,10 +529,13 @@ class AFSArchive(object):
         self.src = buf
 
     def _struct_format(self, size):
-        if size == 2:
+        if size == 1:
+            return "B"
+        elif size == 2:
             return "H"
         elif size == 4:
             return "I"
+        raise ValueError(f"unsupported AFS2 width: {size}")
 
     def create_file_entries(self, buf, file_count, cue_id_size, offset_size, offset_mask):
         buf.seek(0x10)
@@ -381,7 +551,8 @@ class AFSArchive(object):
         offsets_for_length_calculating = unaligned_offs[1:]
         lengths = itertools.starmap(
             lambda my_offset, next_offset: next_offset - my_offset,
-            zip(aligned_offs, offsets_for_length_calculating))
+            zip(aligned_offs, offsets_for_length_calculating)
+        )
 
         self.files = list(itertools.starmap(afs2_file_ent_t, zip(cue_ids, aligned_offs, lengths)))
 
@@ -416,13 +587,15 @@ class ACBFile(object):
         else:
             self.awb_handle, self.awb_handle_owned = _get_file_obj(extern_awb)
 
-        self.encoding = encoding or "sjis"
+        self.encoding = encoding or "cp932"
+        current_pos = self.acb_handle.tell()
         try:
-            utf = UTFTable(self.acb_handle, encoding=encoding or "sjis")
+            utf = UTFTable(self.acb_handle, encoding=encoding or "cp932")
             self.track_list = TrackList(utf)
         except UnicodeDecodeError:
             if encoding is None:
                 self.encoding = "utf-8"
+                self.acb_handle.seek(current_pos)
                 utf = UTFTable(self.acb_handle, encoding="utf-8")
                 self.track_list = TrackList(utf)
             else:
@@ -452,12 +625,16 @@ class ACBFile(object):
             if not self.external_awb:
                 raise ValueError("Track {0} is streamed, but there's no external AWB attached.".format(track))
 
-            buf = self.external_awb.file_data_for_cue_id(track.external_wav_id, rw=True)
+            buf = self.external_awb.file_data_for_cue_id(
+                track.cue_id, rw=True
+            )
         else:
             if not self.embedded_awb:
                 raise ValueError("Track {0} is internal, but this ACB file has no internal AWB.".format(track))
 
-            buf = self.embedded_awb.file_data_for_cue_id(track.memory_wav_id, rw=True)
+            buf = self.embedded_awb.file_data_for_cue_id(
+                track.cue_id, rw=True
+            )
         return buf
 
     def __enter__(self):
@@ -485,7 +662,7 @@ class ACBFile(object):
 
 
 def find_awb(path):
-    if path.endswith(".acb"):
+    if path.lower().endswith(".acb"):
         awb_path = path[:-4] + ".awb"
         if os.path.exists(awb_path):
             return awb_path

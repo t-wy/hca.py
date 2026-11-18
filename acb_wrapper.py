@@ -13,6 +13,11 @@ def parse_binary(acb_file: open, awb_file: Optional[open] = None):
                 subkey = None if acb.embedded_awb is None else acb.embedded_awb.mix_key
             )
             for track in acb.track_list.tracks
+            if (
+                (track.is_stream and acb.external_awb) or
+                (not track.is_stream and acb.embedded_awb) or
+                print(f"Skipped {track}")
+            )
         ]
 
 def parse_bytes(acb_bytes: bytes, awb_bytes: Optional[bytes] = None):
