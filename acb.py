@@ -251,7 +251,9 @@ class UTFTable(object):
             if storage_type in (
                 COLUMN_STORAGE_CONSTANT, COLUMN_STORAGE_CONSTANT2
             ):
-                constant = buf.struct(self._build_struct(buf, field_format))[0]
+                constant = buf.struct(
+                    self._build_struct(buf, ">" + field_format)
+                )[0]
             elif storage_type == COLUMN_STORAGE_ZERO:
                 constant = (
                     "" if type_key == COLUMN_TYPE_STRING else
